@@ -1,0 +1,15 @@
+*.o
+*.lib
+*.a
+*.elf
+*.bin
+*.hex
+*~
+
+GPATH
+GRTAGS
+GSYMS
+GTAGS
+
+Libraries
+
