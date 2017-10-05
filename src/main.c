@@ -44,39 +44,86 @@ SOFTWARE.
 */
 int main(void)
 {
-  int i = 0;
-
-  /**
-  *  IMPORTANT NOTE!
-  *  The symbol VECT_TAB_SRAM needs to be defined when building the project
-  *  if code has been located to RAM and interrupts are used. 
-  *  Otherwise the interrupt table located in flash will be used.
-  *  See also the <system_*.c> file and how the SystemInit() function updates 
-  *  SCB->VTOR register.  
-  *  E.g.  SCB->VTOR = 0x20000000;  
-  */
-
-  /* TODO - Add your application code here */
+  /*Analog to digital converter demonstration*/
+  RCC_Configuration();
+  GPIO_Configuration();
+  ADC_Configuration();
 
   /* Initialize LEDs */
   STM_EVAL_LEDInit(LED3);
-  STM_EVAL_LEDInit(LED4);
-  STM_EVAL_LEDInit(LED5);
-  STM_EVAL_LEDInit(LED6);
+
 
   /* Turn on LEDs */
   STM_EVAL_LEDOn(LED3);
-  STM_EVAL_LEDOn(LED4);
-  STM_EVAL_LEDOn(LED5);
-  STM_EVAL_LEDOn(LED6);
+
 
   /* Infinite loop */
   while (1)
   {
-	i++;
+	  ADC_SoftwareStartConv(ADC1);
+
+	  /* wait for end of conversion from both channels */
+	  while((ADC_GetFlagStatus(ADC1,ADC_FLAG_EOC)==RESET)||(ADC_GetFlagStatus(ADC2,ADC_FLAG_EOC) == RESET)){};
+
+	  int results1 = (int)ADC1->DR;
+	  int results2 = (int)ADC2->DR;
   }
 }
 
+void RCC_Configuration(void){
+	/* Initialize all the peripherals here. */
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+}
+/**
+ * Initialize GPIO for pins to be used
+ */
+void GPIO_Configuration(void){
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	// We will be sampling Pin 1 and 2 of GPIOA
+	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AN;
+	GPIO_InitStructure.GPIO_OType 	= GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Pin 	= GPIO_Pin_1 | GPIO_Pin_2;
+	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_NOPULL;
+
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+}
+
+/**
+ *  Configure hardware that is common to all three ADC
+ */
+void ADC_Configuration(void){
+	ADC_InitTypeDef 		ADC_InitStructure;
+	ADC_CommonInitTypeDef 	ADC_InitCommonStructure;
+
+	/* Fill the data structure common to all  ADCs*/
+	ADC_InitCommonStructure.ADC_Mode 	  		= ADC_DualMode_RegSimult;
+	ADC_InitCommonStructure.ADC_Prescaler 		= ADC_Prescaler_Div2;
+	ADC_InitCommonStructure.ADC_DMAAccessMode 	= ADC_DMAAccessMode_Disabled;
+
+	ADC_CommonInit(&ADC_InitCommonStructure);	// <---------- Initialize the hardware
+
+
+	/* Fill the structure to initialize the two ADCs */
+	ADC_InitStructure.ADC_Resolution 			= ADC_Resolution_12b;
+	ADC_InitStructure.ADC_ScanConvMode 			= DISABLE;
+	ADC_InitStructure.ADC_ContinuousConvMode	= DISABLE;
+	ADC_InitStructure.ADC_ExternalTrigConvEdge	= ADC_ExternalTrigConvEdge_None;
+	ADC_InitStructure.ADC_ExternalTrigConv		= ADC_ExternalTrigConv_T1_CC1;
+	ADC_InitStructure.ADC_DataAlign				= ADC_DataAlign_Right;
+	ADC_InitStructure.ADC_NbrOfConversion		= 1;
+
+	/* Initialize the two ADC with the same structure */
+	ADC_Init(ADC1, &ADC_InitStructure);
+	ADC_RegularChannelConfig(ADC1, ADC_Channel_1,1 ,ADC_SampleTime_3Cycles);
+
+	ADC_Init(ADC2, &ADC_InitStructure);
+	ADC_RegularChannelConfig(ADC2, ADC_Channel_2,1 ,ADC_SampleTime_3Cycles);
+
+	ADC_Cmd(ADC1, ENABLE);
+	ADC_Cmd(ADC2, ENABLE);
+}
 
 /*
  * Callback used by stm32f4_discovery_audio_codec.c.
