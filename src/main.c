@@ -43,12 +43,16 @@ SOFTWARE.
 **
 **===========================================================================
 */
+void TIM5_IRQHandler(void) {
+	TIM_ClearITPendingBit(TIM5, TIM_IT_Update); // clear interrupt flag // 3
+	STM_EVAL_LEDToggle(LED3);
+}
 int main(void)
 {
   /*Analog to digital converter demonstration*/
   RCC_Configuration();
-  GPIO_Configuration();
-  DAC_Configuration();
+  Tim_Configuration(84000);
+
 
   /* Initialize LEDs */
   STM_EVAL_LEDInit(LED3);
@@ -61,19 +65,33 @@ int main(void)
   /* Infinite loop */
   while (1)
   {
-	  DAC->DHR12R1 = j; // up ramp
-	  DAC->DHR12R2 = 0xfff - j; // down ramp
-	  j = (j + 1) & 0x0fff;
   }
 }
 
 void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM5 | RCC_AHB1Periph_GPIOA, ENABLE);
 }
+/* *
+ *  @brief Initialize the timer.
+ *  @args interval : 84000 = 1ms
+ **/
 
+void TIM_Configuration(int interval) {
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure;
+
+	TIM_TimeBaseInitStructure.TIM_Prescaler = 0;
+	TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseInitStructure.TIM_Period = interval;
+	TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+	TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
+	TIM_TimeBaseInit(TIM5, &TIM_TimeBaseInitStructure);
+
+	NVIC_EnableIRQ(TIM5_IRQn); 					// Enable IRQ for TIM5 in NVIC
+	TIM_ITConfig(TIM5, TIM_IT_Update, ENABLE); 	// Enable IRQ on update for Timer5
+	TIM_Cmd(TIM5, ENABLE);
+}
 /**
  * Initialize DAC for both chnnels
  */

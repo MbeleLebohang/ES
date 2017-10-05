@@ -82,6 +82,7 @@ void GPIO_Configuration(void);
 void ADC_Configuration(void);
 void RCC_Configuration(void);
 void DAC_Configuration(void);
+void Tim_Configuration(int interval);
 
 /**
   * @}
