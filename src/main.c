@@ -29,6 +29,7 @@ SOFTWARE.
 /* Includes */
 #include "stm32f4xx.h"
 #include "stm32f4_discovery.h"
+#include "header.h"
 
 /* Private macro */
 /* Private variables */
@@ -47,7 +48,7 @@ int main(void)
   /*Analog to digital converter demonstration*/
   RCC_Configuration();
   GPIO_Configuration();
-  ADC_Configuration();
+  DAC_Configuration();
 
   /* Initialize LEDs */
   STM_EVAL_LEDInit(LED3);
@@ -56,17 +57,13 @@ int main(void)
   /* Turn on LEDs */
   STM_EVAL_LEDOn(LED3);
 
-
+  unsigned int j;
   /* Infinite loop */
   while (1)
   {
-	  ADC_SoftwareStartConv(ADC1);
-
-	  /* wait for end of conversion from both channels */
-	  while((ADC_GetFlagStatus(ADC1,ADC_FLAG_EOC)==RESET)||(ADC_GetFlagStatus(ADC2,ADC_FLAG_EOC) == RESET)){};
-
-	  int results1 = (int)ADC1->DR;
-	  int results2 = (int)ADC2->DR;
+	  DAC->DHR12R1 = j; // up ramp
+	  DAC->DHR12R2 = 0xfff - j; // down ramp
+	  j = (j + 1) & 0x0fff;
   }
 }
 
@@ -74,7 +71,25 @@ void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC, ENABLE);
 }
+
+/**
+ * Initialize DAC for both chnnels
+ */
+void DAC_Configuration(void){
+	DAC_InitTypeDef DAC_InitStructure;
+
+	DAC_InitStructure.DAC_Trigger = DAC_Trigger_None;
+	DAC_InitStructure.DAC_WaveGeneration = DAC_WaveGeneration_None;
+	DAC_InitStructure.DAC_OutputBuffer = DAC_OutputBuffer_Enable;
+	DAC_Init(DAC_Channel_1, &DAC_InitStructure);
+	DAC_Init(DAC_Channel_2, &DAC_InitStructure);
+
+	DAC_Cmd(DAC_Channel_1, ENABLE);
+	DAC_Cmd(DAC_Channel_2, ENABLE);
+}
+
 /**
  * Initialize GPIO for pins to be used
  */
@@ -84,7 +99,7 @@ void GPIO_Configuration(void){
 	// We will be sampling Pin 1 and 2 of GPIOA
 	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AN;
 	GPIO_InitStructure.GPIO_OType 	= GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Pin 	= GPIO_Pin_1 | GPIO_Pin_2;
+	GPIO_InitStructure.GPIO_Pin 	= GPIO_Pin_5 | GPIO_Pin_4;
 	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_NOPULL;
 
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
