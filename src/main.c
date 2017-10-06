@@ -37,8 +37,13 @@ SOFTWARE.
 #define pi 3.14159
 
 /* Private variables */
-short int CircularBuffer1[1024], CircularBuffer2[1024], bufferPtr = 0;	// Buffers used for convolution
-int h_m[1024];															// Holds the coefficients of the filter
+short int X1[1024], X2[1024], k = 0;
+float Y1[1024], Y2[1024];
+
+// declare and init IIR weights: 4th order, Chebishev, Low Pass, reference [1]
+// +/- 0.5%, -3dB at 0.025 (250Hz) of sampling frequency
+float a[5] = {1.504626e-5, 6.018503e-5, 9.027754e-5, 6.018503e-5, 1.504626e-5};
+float b[5] = {0 , 3.725385e0, -5.226004e0 , 3.270902e0, -7.705239e-1};
 
 /* Private function prototypes */
 /* Private functions */
@@ -66,40 +71,28 @@ void TIM5_IRQHandler(void) {
 }
 
 void ADC_IRQHandler(void) {
-	bufferPtr++;
-	bufferPtr &= 1023;		// Wrap around
+	X1[k] = ADC1->DR;
+	X2[k] = ADC2->DR;
+	float conv = 0;
 
-	CircularBuffer1[bufferPtr] = ADC1->DR;
-	CircularBuffer2[bufferPtr] = ADC2->DR;
-
-	int conv = (float)CircularBuffer1[(bufferPtr - 100) & 1023] * h_m[0];
-	short m;
-	for (m = 1; m<64; m++){
-		conv += h_m[m] *(float)(CircularBuffer1[(bufferPtr - 100 + m) & 1023] + CircularBuffer1[(bufferPtr - 100 - m) & 1023]);
+	for(int m = 0; m<5; m++){
+		conv += a[m] * X1[(k - m) & 1023] + b[m] * Y1[(k - m) & 1023];
 	}
-	DAC->DHR12R1 = CircularBuffer1[(bufferPtr - 100) & 1023]; // PA4
-	DAC->DHR12R2 = conv >> 16;								  // PA5 -- Filtered
-	bufferPtr++;
-	bufferPtr &= 1023;
+
+	/*for (int n = 1; n<5; n++){
+		conv += b[n] * Y1[(k - n) & 1023];
+	}*/
+	Y1[k] = conv;
+	Y2[k] = (float)X1[k];
+	DAC->DHR12R1 = (int)Y2[k]; //PA4
+	DAC->DHR12R2 = (int)Y1[k]; //PA5 - Filtered
+	k++; k &= 1023;
+
 }
 
 int main(void)
 {
-	/*Prepare the filter coefficients */
-	float h_m0 = 2.0 * 100.0 / 10000.0;
-
-	h_m[0] = (int)(h_m0 * 65536); 												// central weight: 2 x fc / fs
-
-	/* Find other weights */
-	short m;
-	for (m = 1; m < 64; m++){
-		h_m[m] = (int)((h_m0 * 65536 * sin(pi * m * h_m0)) / (pi * m * h_m0));
-	}
-
-	/* Apply the windowing to improve the attinuation */
-	for (m = 1; m < 64; m++){
-		h_m[m] = (int)((float)h_m[m] * cos(pi / 2 * m / 63.0));
-	}
+	/* IIR filter: 4th order, Chebishev, Low Pass*/
 
 	RCC_Configuration();
 
@@ -113,9 +106,6 @@ int main(void)
 
 	/* Initialize LEDs */
 	STM_EVAL_LEDInit(LED3);
-
-
-
 
 	/* Turn on LEDs */
 	STM_EVAL_LEDOn(LED3);
