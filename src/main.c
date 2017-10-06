@@ -30,10 +30,16 @@ SOFTWARE.
 #include "stm32f4xx.h"
 #include "stm32f4_discovery.h"
 #include "header.h"
+#include "math.h"
+
 
 /* Private macro */
+#define pi 3.14159
+
 /* Private variables */
-short int CircularBuffer1[1024], CircularBuffer2[1024], bufferPtr = 0;
+short int CircularBuffer1[1024], CircularBuffer2[1024], bufferPtr = 0;	// Buffers used for convolution
+int h_m[1024];															// Holds the coefficients of the filter
+
 /* Private function prototypes */
 /* Private functions */
 
@@ -65,34 +71,59 @@ void ADC_IRQHandler(void) {
 
 	CircularBuffer1[bufferPtr] = ADC1->DR;
 	CircularBuffer2[bufferPtr] = ADC2->DR;
-	DAC->DHR12R1 = CircularBuffer1[bufferPtr];
-	DAC->DHR12R2 = CircularBuffer1[(bufferPtr - 512) & 1023];	// Delay by 512 samples
+
+	int conv = (float)CircularBuffer1[(bufferPtr - 100) & 1023] * h_m[0];
+	short m;
+	for (m = 1; m<64; m++){
+		conv += h_m[m] *(float)(CircularBuffer1[(bufferPtr - 100 + m) & 1023] + CircularBuffer1[(bufferPtr - 100 - m) & 1023]);
+	}
+	DAC->DHR12R1 = CircularBuffer1[(bufferPtr - 100) & 1023]; // PA4
+	DAC->DHR12R2 = conv >> 16;								  // PA5 -- Filtered
+	bufferPtr++;
+	bufferPtr &= 1023;
 }
 
 int main(void)
 {
-  /*Analog to digital converter demonstration*/
-  RCC_Configuration();
+	/*Prepare the filter coefficients */
+	float h_m0 = 2.0 * 100.0 / 10000.0;
 
-  GPIO_Configuration();
+	h_m[0] = (int)(h_m0 * 65536); 												// central weight: 2 x fc / fs
 
-  ADC_Configuration();
+	/* Find other weights */
+	short m;
+	for (m = 1; m < 64; m++){
+		h_m[m] = (int)((h_m0 * 65536 * sin(pi * m * h_m0)) / (pi * m * h_m0));
+	}
 
-  DAC_Configuration();
+	/* Apply the windowing to improve the attinuation */
+	for (m = 1; m < 64; m++){
+		h_m[m] = (int)((float)h_m[m] * cos(pi / 2 * m / 63.0));
+	}
 
-  TIM_Configuration(840);
+	RCC_Configuration();
 
-  /* Initialize LEDs */
-  STM_EVAL_LEDInit(LED3);
+	GPIO_Configuration();
+
+	ADC_Configuration();
+
+	DAC_Configuration();
+
+	TIM_Configuration(840);
+
+	/* Initialize LEDs */
+	STM_EVAL_LEDInit(LED3);
 
 
-  /* Turn on LEDs */
-  STM_EVAL_LEDOn(LED3);
 
-  /* Infinite loop */
-  while (1)
-  {
-  }
+
+	/* Turn on LEDs */
+	STM_EVAL_LEDOn(LED3);
+
+	/* Infinite loop */
+	while (1)
+	{
+	}
 }
 
 void RCC_Configuration(void){
