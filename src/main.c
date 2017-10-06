@@ -43,15 +43,24 @@ SOFTWARE.
 **
 **===========================================================================
 */
-void TIM5_IRQHandler(void) {
-	TIM_ClearITPendingBit(TIM5, TIM_IT_Update); // clear interrupt flag // 3
-	STM_EVAL_LEDToggle(LED3);
+void TIM2_IRQHandler(void) {
+	/* Check if interrupt has occured */
+	if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
+	{
+		/* Clear interrupt pending bit */
+		TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+
+		/* WHAT EVER YOU NEED TO DO IN THE INTERRUPT HANDLER GOES HERE */
+		STM_EVAL_LEDToggle(LED3);
+	}
 }
+
 int main(void)
 {
   /*Analog to digital converter demonstration*/
   RCC_Configuration();
-  Tim_Configuration(84000);
+
+  TIM_Configuration(10000);
 
 
   /* Initialize LEDs */
@@ -61,7 +70,6 @@ int main(void)
   /* Turn on LEDs */
   STM_EVAL_LEDOn(LED3);
 
-  unsigned int j;
   /* Infinite loop */
   while (1)
   {
@@ -71,7 +79,8 @@ int main(void)
 void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM5 | RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC  | RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_APB1PeriphClockCmd( RCC_APB1Periph_TIM2 , ENABLE);
 }
 /* *
  *  @brief Initialize the timer.
@@ -79,18 +88,26 @@ void RCC_Configuration(void){
  **/
 
 void TIM_Configuration(int interval) {
-	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure;
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
 
-	TIM_TimeBaseInitStructure.TIM_Prescaler = 0;
-	TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
-	TIM_TimeBaseInitStructure.TIM_Period = interval;
-	TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-	TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
-	TIM_TimeBaseInit(TIM5, &TIM_TimeBaseInitStructure);
+	/* Put your timer initialisation here */
 
-	NVIC_EnableIRQ(TIM5_IRQn); 					// Enable IRQ for TIM5 in NVIC
-	TIM_ITConfig(TIM5, TIM_IT_Update, ENABLE); 	// Enable IRQ on update for Timer5
-	TIM_Cmd(TIM5, ENABLE);
+	/* Configure the timer*/
+	TIM_TimeBaseInitStruct.TIM_Period = interval - 1;
+	TIM_TimeBaseInitStruct.TIM_Prescaler = 8400 - 1;
+	TIM_TimeBaseInitStruct.TIM_ClockDivision = 0;
+	TIM_TimeBaseInitStruct.TIM_RepetitionCounter = TIM_CounterMode_Up;
+
+	/* Initialize timer 3*/
+	TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStruct);
+
+	/* Start the count */
+	TIM_Cmd(TIM2, ENABLE);
+
+	NVIC_EnableIRQ(TIM2_IRQn); // Enable IRQ for TIM5 in NVIC
+
+	/* Enable timer interrupt */
+	TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
 }
 /**
  * Initialize DAC for both chnnels
