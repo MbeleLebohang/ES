@@ -43,15 +43,18 @@ SOFTWARE.
 **
 **===========================================================================
 */
-void TIM2_IRQHandler(void) {
+void TIM5_IRQHandler(void) {
 	/* Check if interrupt has occured */
-	if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
+	if (TIM_GetITStatus(TIM5, TIM_IT_Update) != RESET)
 	{
 		/* Clear interrupt pending bit */
-		TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+		TIM_ClearITPendingBit(TIM5, TIM_IT_Update);
+		 DAC->DHR12R1 = ADC1->DR;
+		 DAC->DHR12R2 = ADC2->DR;
+		 ADC_SoftwareStartConv(ADC1);
 
-		/* WHAT EVER YOU NEED TO DO IN THE INTERRUPT HANDLER GOES HERE */
-		STM_EVAL_LEDToggle(LED3);
+		 /* WHAT EVER YOU NEED TO DO IN THE INTERRUPT HANDLER GOES HERE */
+		 STM_EVAL_LEDToggle(LED3);
 	}
 }
 
@@ -60,8 +63,13 @@ int main(void)
   /*Analog to digital converter demonstration*/
   RCC_Configuration();
 
-  TIM_Configuration(10000);
+  GPIO_Configuration();
 
+  ADC_Configuration();
+
+  DAC_Configuration();
+
+  TIM_Configuration(840);
 
   /* Initialize LEDs */
   STM_EVAL_LEDInit(LED3);
@@ -79,8 +87,8 @@ int main(void)
 void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC  | RCC_AHB1Periph_GPIOA, ENABLE);
-	RCC_APB1PeriphClockCmd( RCC_APB1Periph_TIM2 , ENABLE);
+	RCC_AHB1PeriphClockCmd( RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC  | RCC_APB1Periph_TIM5 , ENABLE);
 }
 /* *
  *  @brief Initialize the timer.
@@ -94,20 +102,21 @@ void TIM_Configuration(int interval) {
 
 	/* Configure the timer*/
 	TIM_TimeBaseInitStruct.TIM_Period = interval - 1;
-	TIM_TimeBaseInitStruct.TIM_Prescaler = 8400 - 1;
-	TIM_TimeBaseInitStruct.TIM_ClockDivision = 0;
+	TIM_TimeBaseInitStruct.TIM_Prescaler = 0;
+	TIM_TimeBaseInitStruct.TIM_ClockDivision = TIM_CKD_DIV1;
 	TIM_TimeBaseInitStruct.TIM_RepetitionCounter = TIM_CounterMode_Up;
+	TIM_TimeBaseInitStruct.TIM_RepetitionCounter = 0;
 
 	/* Initialize timer 3*/
-	TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStruct);
+	TIM_TimeBaseInit(TIM5, &TIM_TimeBaseInitStruct);
 
-	/* Start the count */
-	TIM_Cmd(TIM2, ENABLE);
-
-	NVIC_EnableIRQ(TIM2_IRQn); // Enable IRQ for TIM5 in NVIC
+	NVIC_EnableIRQ(TIM5_IRQn); // Enable IRQ for TIM5 in NVIC
 
 	/* Enable timer interrupt */
-	TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+	TIM_ITConfig(TIM5, TIM_IT_Update, ENABLE);
+
+	/* Start the count */
+	TIM_Cmd(TIM5, ENABLE);
 }
 /**
  * Initialize DAC for both chnnels
@@ -134,7 +143,7 @@ void GPIO_Configuration(void){
 	// We will be sampling Pin 1 and 2 of GPIOA
 	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AN;
 	GPIO_InitStructure.GPIO_OType 	= GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Pin 	= GPIO_Pin_5 | GPIO_Pin_4;
+	GPIO_InitStructure.GPIO_Pin 	= GPIO_Pin_5 | GPIO_Pin_4 | GPIO_Pin_2 | GPIO_Pin_1;
 	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_NOPULL;
 
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
@@ -156,11 +165,11 @@ void ADC_Configuration(void){
 
 
 	/* Fill the structure to initialize the two ADCs */
-	ADC_InitStructure.ADC_Resolution 			= ADC_Resolution_12b;
+	ADC_InitStructure.ADC_Resolution 			= ADC_Resolution_8b;
 	ADC_InitStructure.ADC_ScanConvMode 			= DISABLE;
 	ADC_InitStructure.ADC_ContinuousConvMode	= DISABLE;
 	ADC_InitStructure.ADC_ExternalTrigConvEdge	= ADC_ExternalTrigConvEdge_None;
-	ADC_InitStructure.ADC_ExternalTrigConv		= ADC_ExternalTrigConv_T1_CC1;
+	ADC_InitStructure.ADC_ExternalTrigConv		= ADC_ExternalTrigConv_T5_CC1;
 	ADC_InitStructure.ADC_DataAlign				= ADC_DataAlign_Right;
 	ADC_InitStructure.ADC_NbrOfConversion		= 1;
 
