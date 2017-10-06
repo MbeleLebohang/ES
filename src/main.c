@@ -33,6 +33,7 @@ SOFTWARE.
 
 /* Private macro */
 /* Private variables */
+short int CircularBuffer1[1024], CircularBuffer2[1024], bufferPtr = 0;
 /* Private function prototypes */
 /* Private functions */
 
@@ -59,8 +60,13 @@ void TIM5_IRQHandler(void) {
 }
 
 void ADC_IRQHandler(void) {
- DAC->DHR12R1 = ADC1->DR;
- DAC->DHR12R2 = ADC2->DR;
+	bufferPtr++;
+	bufferPtr &= 1023;		// Wrap around
+
+	CircularBuffer1[bufferPtr] = ADC1->DR;
+	CircularBuffer2[bufferPtr] = ADC2->DR;
+	DAC->DHR12R1 = CircularBuffer1[bufferPtr];
+	DAC->DHR12R2 = CircularBuffer1[(bufferPtr - 512) & 1023];	// Delay by 512 samples
 }
 
 int main(void)
