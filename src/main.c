@@ -58,6 +58,11 @@ void TIM5_IRQHandler(void) {
 	}
 }
 
+void ADC_IRQHandler(void) {
+ DAC->DHR12R1 = ADC1->DR;
+ DAC->DHR12R2 = ADC2->DR;
+}
+
 int main(void)
 {
   /*Analog to digital converter demonstration*/
@@ -97,6 +102,7 @@ void RCC_Configuration(void){
 
 void TIM_Configuration(int interval) {
 	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
+	TIM_OCInitTypeDef TIM_OCInitStruct;
 
 	/* Put your timer initialisation here */
 
@@ -110,10 +116,16 @@ void TIM_Configuration(int interval) {
 	/* Initialize timer 3*/
 	TIM_TimeBaseInit(TIM5, &TIM_TimeBaseInitStruct);
 
-	NVIC_EnableIRQ(TIM5_IRQn); // Enable IRQ for TIM5 in NVIC
-
-	/* Enable timer interrupt */
-	TIM_ITConfig(TIM5, TIM_IT_Update, ENABLE);
+	/* Initialise the compare capture structure */
+	TIM_OCInitStruct.TIM_OCMode = TIM_OCMode_PWM1;
+	TIM_OCInitStruct.TIM_OutputState = TIM_OutputState_Enable;
+	TIM_OCInitStruct.TIM_OutputNState = TIM_OutputNState_Disable;
+	TIM_OCInitStruct.TIM_Pulse = 1;
+	TIM_OCInitStruct.TIM_OCPolarity = TIM_OCPolarity_High;
+	TIM_OCInitStruct.TIM_OCNPolarity = TIM_OCNPolarity_Low;
+	TIM_OCInitStruct.TIM_OCIdleState = TIM_OCIdleState_Reset;
+	TIM_OCInitStruct.TIM_OCNIdleState = TIM_OCNIdleState_Set;
+	TIM_OC1Init(TIM5, &TIM_OCInitStruct);
 
 	/* Start the count */
 	TIM_Cmd(TIM5, ENABLE);
@@ -165,10 +177,10 @@ void ADC_Configuration(void){
 
 
 	/* Fill the structure to initialize the two ADCs */
-	ADC_InitStructure.ADC_Resolution 			= ADC_Resolution_8b;
+	ADC_InitStructure.ADC_Resolution 			= ADC_Resolution_12b;
 	ADC_InitStructure.ADC_ScanConvMode 			= DISABLE;
 	ADC_InitStructure.ADC_ContinuousConvMode	= DISABLE;
-	ADC_InitStructure.ADC_ExternalTrigConvEdge	= ADC_ExternalTrigConvEdge_None;
+	ADC_InitStructure.ADC_ExternalTrigConvEdge	= ADC_ExternalTrigConvEdge_Rising;
 	ADC_InitStructure.ADC_ExternalTrigConv		= ADC_ExternalTrigConv_T5_CC1;
 	ADC_InitStructure.ADC_DataAlign				= ADC_DataAlign_Right;
 	ADC_InitStructure.ADC_NbrOfConversion		= 1;
@@ -182,6 +194,9 @@ void ADC_Configuration(void){
 
 	ADC_Cmd(ADC1, ENABLE);
 	ADC_Cmd(ADC2, ENABLE);
+
+	NVIC_EnableIRQ(ADC_IRQn); 					// Enable IRQ for ADC in NVIC
+	ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);		// Enable ADC IRQ generation
 }
 
 /*
