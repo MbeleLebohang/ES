@@ -83,6 +83,65 @@ void RCC_Configuration(void){
 	RCC_APB1PeriphClockCmd( RCC_APB1Periph_TIM2 , ENABLE);
 }
 
+/**
+ * @Brief NVIC Configuration
+ */
+
+void NVIC_Configuration(void){
+	NVIC_InitTypeDef NVIC_InitStructure;
+
+	/* Configure the Priority Group to 2 bits */
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+
+	/* Enable the USARTx Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = USART6_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+}
+
+/*************************************************************************************************
+ * @Brief USART6_RECIEVER for MIDI input.														 *
+ *																								 *
+ * 		USART6 configured as follows:															 *
+ *																								 *
+ *       - BaudRate = 10500000 baud																 *
+ * 		   - Maximum BaudRate that can be achieved when using the Oversampling by 8				 *
+ *		     is: (USART APB Clock / 8)															 *
+ *			 Example:																			 *
+ *			    - (USART6 APB2 Clock / 8) = (84 MHz / 8) = 10500000 baud						 *
+ *       - Word Length = 8 Bits								 									 *
+ *       - one Stop Bit																			 *
+ *       - No parity																			 *
+ *       - Hardware flow control disabled (RTS and CTS signals)									 *
+ *       - Receive and transmit enabled															 *
+ *************************************************************************************************/
+
+void USARTx_Configuration(void) {
+
+	USART_InitTypeDef USART_InitStructure;
+
+	/* Enable the USART OverSampling by 8 */
+	USART_OverSampling8Cmd(USART6, ENABLE);
+
+	// USART6 configuration
+	USART_InitStructure.USART_BaudRate = 10500000;
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_none;
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;
+	USART_InitStructure.USART_Parity = USART_Parity_No;
+	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+
+	USART_Init(USART6, &USART_InitStructure);
+
+	//Enables USART 6 and receiver
+	USART_Cmd(USART6, ENABLE);
+
+	//Enable RXNE interrupt
+	USART_ITConfig(USART6, USART_IT_RXNE, ENABLE);
+}
+
 /* *
  *  @brief Initialize the timer.
  *  @args interval : 84000 = 1ms
@@ -138,16 +197,17 @@ void GPIO_Configuration(void){
 
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	// GPIOC for USART_6 used by MIDI Reciever
+	/* Configure USART6 Tx and Rx as alternate function push-pull for MIDI Receiver*/
 	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AF;
 	GPIO_InitStructure.GPIO_Speed 	= GPIO_Speed_100MHz;
-	GPIO_InitStructure.GPIO_Pin   	= GPIO_Pin_6 | GPIO_Pin_7;
+	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Pin   	= USARTx_TX_PIN | USARTx_RX_PIN;
 
 	GPIO_Init(GPIOC, &GPIO_InitStructure);
 
 	// Alternate function PC 6-7 to USART_6
-	GPIO_PinAFConfig(GPIOC, GPIO_PinSource7 | GPIO_PinSource6, GPIO_AF_USART6);
-
+	GPIO_PinAFConfig(GPIOC, USARTx_TX_SOURCE, USARTx_TX_AF);
+	GPIO_PinAFConfig(GPIOC, USARTx_RX_SOURCE, USARTx_RX_AF);
 }
 
 /**

@@ -69,6 +69,14 @@
 /** @defgroup STM32F4_DISCOVERY_LOW_LEVEL_Exported_Macros
   * @{
   */
+ /* Definition for USARTx resources ********************************************/
+ #define USARTx_TX_PIN                    GPIO_Pin_6
+ #define USARTx_TX_SOURCE                 GPIO_PinSource6
+ #define USARTx_TX_AF                     GPIO_AF_USART6
+
+ #define USARTx_RX_PIN                    GPIO_Pin_7
+ #define USARTx_RX_SOURCE                 GPIO_PinSource7
+ #define USARTx_RX_AF                     GPIO_AF_USART6
 /**
   * @}
   */
