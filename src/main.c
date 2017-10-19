@@ -33,6 +33,9 @@ SOFTWARE.
 
 /* Private macro */
 /* Private variables */
+char MIDI_BYTEx;
+char MIDI_NOTE_ON;
+char Midi_Bytes[3];
 /* Private function prototypes */
 /* Private functions */
 
