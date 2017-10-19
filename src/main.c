@@ -57,18 +57,14 @@ void TIM2_IRQHandler(void) {
 
 int main(void)
 {
-  /*Analog to digital converter demonstration*/
+  /*MIDI Receiver*/
   RCC_Configuration();
 
-  TIM_Configuration(10000);
+  NVIC_Configuration();
 
+  GPIO_Configuration();
 
-  /* Initialize LEDs */
-  STM_EVAL_LEDInit(LED3);
-
-
-  /* Turn on LEDs */
-  STM_EVAL_LEDOn(LED3);
+  USARTx_Configuration();
 
   /* Infinite loop */
   while (1)
@@ -126,9 +122,9 @@ void USARTx_Configuration(void) {
 	USART_OverSampling8Cmd(USART6, ENABLE);
 
 	// USART6 configuration
-	USART_InitStructure.USART_BaudRate = 10500000;
+	USART_InitStructure.USART_BaudRate = 31250;
 	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
-	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_none;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
 	USART_InitStructure.USART_StopBits = USART_StopBits_1;
 	USART_InitStructure.USART_Parity = USART_Parity_No;
 	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
@@ -245,6 +241,38 @@ void ADC_Configuration(void){
 	ADC_Cmd(ADC2, ENABLE);
 }
 
+void USART6_IRQHandler() {
+	// Read the data
+	uint16_t data = USART_ReceiveData(USART6);
+
+	if (data/16 == 0x9) {
+		//If it has just received a new status byte
+		MIDI_BYTEx = 1;
+		MIDI_NOTE_ON = 1;
+	}
+	else {
+		//If not receiving a status byte and byte_no > 3, assume running_status byte(s)
+		//If some other status byte
+		if ((data >> 7) == 1){
+			MIDI_NOTE_ON = 0;
+		}
+
+		if (MIDI_BYTEx > 3){
+			MIDI_BYTEx = 2;			//Running status
+		}
+	}
+
+	//Read in byte
+	Midi_Bytes[MIDI_BYTEx-1] = USART_ReceiveData(USART6);
+	if (MIDI_BYTEx == 3 && MIDI_NOTE_ON == 1 && Midi_Bytes[2] != 0) {
+		//If the current command is NOTE ON
+		if (Midi_Bytes[0]/16 == 0x9) {
+			//Finish reading block
+
+		}
+	}
+	MIDI_BYTEx++;
+}
 /*
  * Callback used by stm32f4_discovery_audio_codec.c.
  * Refer to stm32f4_discovery_audio_codec.h for more info.

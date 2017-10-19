@@ -92,6 +92,9 @@ void RCC_Configuration(void);
 void DAC_Configuration(void);
 void TIM_Configuration(int interval);
 
+void NVIC_Configuration(void);
+void USARTx_Configuration(void);
+
 /**
   * @}
   */
