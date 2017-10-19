@@ -78,10 +78,11 @@ int main(void)
 
 void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
-	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC  | RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART6 | RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC  | RCC_AHB1Periph_GPIOC | RCC_AHB1Periph_GPIOA, ENABLE);
 	RCC_APB1PeriphClockCmd( RCC_APB1Periph_TIM2 , ENABLE);
 }
+
 /* *
  *  @brief Initialize the timer.
  *  @args interval : 84000 = 1ms
@@ -89,8 +90,6 @@ void RCC_Configuration(void){
 
 void TIM_Configuration(int interval) {
 	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
-
-	/* Put your timer initialisation here */
 
 	/* Configure the timer*/
 	TIM_TimeBaseInitStruct.TIM_Period = interval - 1;
@@ -131,13 +130,24 @@ void DAC_Configuration(void){
 void GPIO_Configuration(void){
 	GPIO_InitTypeDef GPIO_InitStructure;
 
-	// We will be sampling Pin 1 and 2 of GPIOA
+	//  PA4 and PA5 for DAC.
 	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AN;
 	GPIO_InitStructure.GPIO_OType 	= GPIO_OType_PP;
 	GPIO_InitStructure.GPIO_Pin 	= GPIO_Pin_5 | GPIO_Pin_4;
 	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_NOPULL;
 
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	// GPIOC for USART_6 used by MIDI Reciever
+	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed 	= GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_Pin   	= GPIO_Pin_6 | GPIO_Pin_7;
+
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+	// Alternate function PC 6-7 to USART_6
+	GPIO_PinAFConfig(GPIOC, GPIO_PinSource7 | GPIO_PinSource6, GPIO_AF_USART6);
+
 }
 
 /**
