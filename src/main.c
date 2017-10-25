@@ -219,7 +219,7 @@ void GPIO_Configuration(void){
 
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	/* Configure USART6 Tx and Rx as alternate function push-pull for MIDI Receiver*/
+	/* Configure USART6 Tx and Rx as alternate function push-pull for MIDI Receiver */
 	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AF;
 	GPIO_InitStructure.GPIO_Speed 	= GPIO_Speed_100MHz;
 	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_UP;
@@ -227,9 +227,47 @@ void GPIO_Configuration(void){
 
 	GPIO_Init(GPIOC, &GPIO_InitStructure);
 
-	// Alternate function PC 6-7 to USART_6
+	/* Alternate function PC 6-7 to USART_6 */
 	GPIO_PinAFConfig(GPIOC, USARTx_TX_SOURCE, USARTx_TX_AF);
 	GPIO_PinAFConfig(GPIOC, USARTx_RX_SOURCE, USARTx_RX_AF);
+
+	/* Configure CODEC_RESET_PIN */
+	GPIO_InitStructure.GPIO_Pin = CODEC_RESET_PIN;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_DOWN;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+
+	GPIO_Init(GPIOD, &GPIO_InitStructure);
+
+	/* Configure I2C Pins */
+	GPIO_InitStructure.GPIO_Pin = I2C_SDA_PIN | I2C_SCL_PIN;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_OD;
+
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	/* Alternate function PC 6-7 to I2C */
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource6, GPIO_AF_I2C1);
+	GPIO_PinAFConfig(GPIOB, GPIO_PinSource9, GPIO_AF_I2C1);
+
+	/* Configure I2S pins */
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Pin = I2S3_SCLK_PIN | I2S3_SD_PIN | I2S3_MCLK_PIN;
+
+	GPIO_InitStructure.GPIO_Pin = I2S3_WS_PIN;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	/* Configure output ports to AF */
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource4, GPIO_AF_SPI3);
+	GPIO_PinAFConfig(GPIOC, GPIO_PinSource7, GPIO_AF_SPI3);
+	GPIO_PinAFConfig(GPIOC, GPIO_PinSource10, GPIO_AF_SPI3);
+	GPIO_PinAFConfig(GPIOC, GPIO_PinSource12, GPIO_AF_SPI3);
+
+	/*  Reset the CODEC so that I2S and I2c can be configured. */
+	GPIO_ResetBits(GPIOD, CODEC_RESET_PIN);
+
 }
 
 /**
