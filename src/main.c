@@ -29,6 +29,7 @@ SOFTWARE.
 /* Includes */
 #include "stm32f4xx.h"
 #include "stm32f4_discovery.h"
+#include "stm32f4_discovery_audio_codec.h"
 #include "header.h"
 
 /* Private macro */
@@ -162,6 +163,38 @@ void USARTx_Configuration(void) {
 
 	//Enable RXNE interrupt
 	USART_ITConfig(USART6, USART_IT_RXNE, ENABLE);
+}
+
+/* *
+ *  @brief Initialize peripherals used by the CODEC.
+ *  @args none
+ **/
+void CODEC_Configuration(void){
+	I2S_InitTypeDef I2S_InitStructure;
+	I2C_InitTypeDef I2C_InitStructure;
+
+	// configure I2S port
+	SPI_I2S_DeInit(CODEC_I2S);
+	I2S_InitStructure.I2S_AudioFreq = I2S_AudioFreq_48k;
+	I2S_InitStructure.I2S_MCLKOutput = I2S_MCLKOutput_Enable;
+	I2S_InitStructure.I2S_DataFormat = I2S_DataFormat_16b;
+	I2S_InitStructure.I2S_Mode = I2S_Mode_MasterTx;
+	I2S_InitStructure.I2S_Standard = I2S_Standard_Phillips;
+	I2S_InitStructure.I2S_CPOL = I2S_CPOL_Low;
+
+	I2S_Init(CODEC_I2S, &I2S_InitStructure);
+
+	// configure I2C port
+	I2C_DeInit(CODEC_I2C);
+	I2C_InitStructure.I2C_ClockSpeed = 100000;
+	I2C_InitStructure.I2C_Mode = I2C_Mode_I2C;
+	I2C_InitStructure.I2C_OwnAddress1 = CORE_I2C_ADDRESS;
+	I2C_InitStructure.I2C_Ack = I2C_Ack_Enable;
+	I2C_InitStructure.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
+	I2C_InitStructure.I2C_DutyCycle = I2C_DutyCycle_2;
+
+	I2C_Cmd(CODEC_I2C, ENABLE);
+	I2C_Init(CODEC_I2C, &I2C_InitStructure);
 }
 
 /* *
@@ -336,6 +369,164 @@ void USART6_IRQHandler() {
 		}
 	}
 	MIDI_BYTEx++;
+}
+void CS43L22_Configuration(void)
+{
+	uint32_t delaycount;
+	uint8_t cmdBuffer[5];
+
+	uint8_t regValue = 0xFF;
+
+	GPIO_SetBits(GPIOD, CODEC_RESET_PIN);
+	delaycount = 1000000;
+	while (delaycount > 0)
+	{
+		delaycount--;
+	}
+	//keep codec OFF
+	cmdBuffer[0] = CODEC_MAP_PLAYBACK_CTRL1;
+	cmdBuffer[1] = 0x01;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	//begin initialization sequence (p. 32)
+	cmdBuffer[0] = 0x00;
+	cmdBuffer[1] = 0x99;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = 0x47;
+	cmdBuffer[1] = 0x80;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	regValue = Read_CODEC_Register(0x32);
+
+	cmdBuffer[0] = 0x32;
+	cmdBuffer[1] = regValue | 0x80;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	regValue = Read_CODEC_Register(0x32);
+
+	cmdBuffer[0] = 0x32;
+	cmdBuffer[1] = regValue & (~0x80);
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = 0x00;
+	cmdBuffer[1] = 0x00;
+	Send_CODEC_Command(cmdBuffer, 2);
+	//end of initialization sequence
+
+	cmdBuffer[0] = CODEC_MAP_PWR_CTRL2;
+	cmdBuffer[1] = 0xAF;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = CODEC_MAP_PLAYBACK_CTRL1;
+	cmdBuffer[1] = 0x70;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = CODEC_MAP_CLK_CTRL;
+	cmdBuffer[1] = 0x81; //auto detect clock
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = CODEC_MAP_IF_CTRL1;
+	cmdBuffer[1] = 0x07;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = 0x0A;
+	cmdBuffer[1] = 0x00;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = 0x27;
+	cmdBuffer[1] = 0x00;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = 0x1A | CODEC_MAPBYTE_INC;
+	cmdBuffer[1] = 0x0A;
+	cmdBuffer[2] = 0x0A;
+	Send_CODEC_Command(cmdBuffer, 3);
+
+	cmdBuffer[0] = 0x1F;
+	cmdBuffer[1] = 0x0F;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+	cmdBuffer[0] = CODEC_MAP_PWR_CTRL1;
+	cmdBuffer[1] = 0x9E;
+	Send_CODEC_Command(cmdBuffer, 2);
+
+}
+
+/**
+ * @Brief Send commands to CS43L22
+ */
+void Send_CODEC_Command(uint8_t controlBytes[], uint8_t numBytes)
+{
+	uint8_t bytesSent=0;
+
+	//just wait until no longer busy
+	while (I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BUSY)){}
+
+	I2C_GenerateSTART(CODEC_I2C, ENABLE);
+	//wait for generation of start condition
+	while (!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_SB)){}
+
+	I2C_Send7bitAddress(CODEC_I2C, CODEC_I2C_ADDRESS, I2C_Direction_Transmitter);
+	//wait for end of address transmission
+	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)){}
+
+	while (bytesSent < numBytes)
+	{
+		I2C_SendData(CODEC_I2C, controlBytes[bytesSent]);
+		bytesSent++;
+		//wait for transmission of byte
+		while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_BYTE_TRANSMITTING)){}
+	}
+	//wait until it's finished sending before creating STOP
+	while(!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BTF)){}
+	I2C_GenerateSTOP(CODEC_I2C, ENABLE);
+
+}
+
+/**
+ * @Brief Read CS43L22 Register
+ */
+uint8_t Read_CODEC_Register(uint8_t mapbyte)
+{
+	uint8_t receivedByte = 0;
+
+	//just wait until no longer busy
+	while (I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BUSY)){}
+
+	I2C_GenerateSTART(CODEC_I2C, ENABLE);
+	//wait for generation of start condition
+	while (!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_SB)){}
+
+	I2C_Send7bitAddress(CODEC_I2C, CODEC_I2C_ADDRESS, I2C_Direction_Transmitter);
+	//wait for end of address transmission
+	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)){}
+
+	I2C_SendData(CODEC_I2C, mapbyte); //sets the transmitter address
+	//wait for transmission of byte
+	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_BYTE_TRANSMITTING)){}
+	I2C_GenerateSTOP(CODEC_I2C, ENABLE);
+
+	//just wait until no longer busy
+	while (I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BUSY)){}
+
+	I2C_AcknowledgeConfig(CODEC_I2C, DISABLE);
+
+	I2C_GenerateSTART(CODEC_I2C, ENABLE);
+	//wait for generation of start condition
+	while (!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_SB)){}
+
+	I2C_Send7bitAddress(CODEC_I2C, CODEC_I2C_ADDRESS, I2C_Direction_Receiver);
+	//wait for end of address transmission
+	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED)){}
+
+	//wait until byte arrived
+	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_BYTE_RECEIVED)){}
+	receivedByte = I2C_ReceiveData(CODEC_I2C);
+
+	I2C_GenerateSTOP(CODEC_I2C, ENABLE);
+
+	return receivedByte;
 }
 /*
  * Callback used by stm32f4_discovery_audio_codec.c.
