@@ -75,11 +75,34 @@ int main(void)
   }
 }
 
+/*************************************************************************************************
+ * @Brief Clock for different peripherals used for this project.								 *
+ *																								 *
+ * 		USART6 used for:															 			 *
+ *			- Serial communication with MIDI Controller								 			 *																			 *
+ * 		GPIOA used for:																			 *
+ *		    - DAC output signal																	 *
+ *			- I2S_WS signal																		 *
+ *		GPIOB used for:																			 *
+ *		    - I2C_SDA, I2C_SCL 																	 *																	 *
+ *		GPIOC used for:																			 *
+ *		    - I2S_MCK, I2S_SCK, I2S_SD 															 *
+ *		    - USART Rx and Tx pins														 		 *
+ *		GPIOD used for:																			 *
+ *		    - Reset pin on CS43L22																 *
+ *																								 *
+ *		CODEC uses the following peripherals I2C1, I2S and SPI3										 *
+ *																								 *
+ *************************************************************************************************/
 void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART6 | RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC  | RCC_AHB1Periph_GPIOC | RCC_AHB1Periph_GPIOA, ENABLE);
-	RCC_APB1PeriphClockCmd( RCC_APB1Periph_TIM2 , ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC  | RCC_AHB1Periph_GPIOA | RCC_AHB1Periph_GPIOB, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC  | RCC_AHB1Periph_GPIOD, ENABLE);
+	RCC_APB1PeriphClockCmd( RCC_APB1Periph_TIM2 | RCC_APB1Periph_I2C1 | RCC_APB1Periph_SPI3 , ENABLE);
+
+	/* Use PLL module enable I2S peripherals clock for accurate standard audio sampling */
+	RCC_PLLI2SCmd(ENABLE);
 }
 
 /**
