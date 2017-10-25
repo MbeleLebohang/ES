@@ -151,6 +151,7 @@ void TIM_Configuration(int interval);
 void NVIC_Configuration(void);
 void USARTx_Configuration(void);
 
+void CODEC_Configuration(void);
 void Send_CODEC_Command(uint8_t[], uint8_t);
 void CS43L22_Configuration(void);
 uint8_t Read_CODEC_Register(uint8_t);
