@@ -132,6 +132,8 @@ void initFilter(fir_8* theFilter)
 int main(void)
 {
 	/*MIDI Receiver*/
+	SystemInit();
+
 	RCC_Configuration();
 
 	NVIC_Configuration();
@@ -143,7 +145,7 @@ int main(void)
 
 	STM_EVAL_LEDInit(LED4);
 
-	I2S_Cmd(CODEC_I2S, ENABLE);
+
 
 	fir_8 filt;
 
@@ -205,9 +207,9 @@ int main(void)
 void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART6 | RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_APB1Periph_DAC  | RCC_AHB1Periph_GPIOA | RCC_AHB1Periph_GPIOB, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA | RCC_AHB1Periph_GPIOB, ENABLE);
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC  | RCC_AHB1Periph_GPIOD, ENABLE);
-	RCC_APB1PeriphClockCmd( RCC_APB1Periph_TIM2 | RCC_APB1Periph_I2C1 | RCC_APB1Periph_SPI3 , ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM2 | RCC_APB1Periph_I2C1 | RCC_APB1Periph_SPI3 , ENABLE);
 
 	/* Use PLL module enable I2S peripherals clock for accurate standard audio sampling */
 	RCC_PLLI2SCmd(ENABLE);
@@ -395,6 +397,7 @@ void GPIO_Configuration(void){
 	/* Configure I2S pins */
 	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
 	GPIO_InitStructure.GPIO_Pin = I2S3_SCLK_PIN | I2S3_SD_PIN | I2S3_MCLK_PIN;
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
 
 	GPIO_InitStructure.GPIO_Pin = I2S3_WS_PIN;
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
@@ -558,6 +561,8 @@ void CS43L22_Configuration(void)
 	cmdBuffer[1] = 0x9E;
 	Send_CODEC_Command(cmdBuffer, 2);
 
+	/* Enable SPI  */
+	I2S_Cmd(CODEC_I2S, ENABLE);
 }
 
 /**
