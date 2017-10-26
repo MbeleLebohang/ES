@@ -39,29 +39,6 @@ char MIDI_NOTE_ON;
 char Midi_Bytes[3];
 int CircularBuffer1[1024], bufferPtr = 0;
 
-#define NOTEFREQUENCY 0.015		//frequency of saw wave: f0 = 0.5 * NOTEFREQUENCY * 48000 (=sample rate)
-#define NOTEAMPLITUDE 500.0		//amplitude of the saw wave
-
-
-typedef struct {
-	float tabs[8];
-	float params[8];
-	uint8_t currIndex;
-} fir_8;
-
-
-
-volatile uint32_t sampleCounter = 0;
-volatile int16_t sample = 0;
-
-float sawWave = 0.0;
-
-float filteredSaw = 0.0;
-
-float updateFilter(fir_8* theFilter, float newValue);
-
-void initFilter(fir_8* theFilter);
-
 /* Private function prototypes */
 /* Private functions */
 
@@ -85,50 +62,6 @@ void TIM2_IRQHandler(void) {
 }
 
 
-
-
-// a very crude FIR lowpass filter
-float updateFilter(fir_8* filt, float val)
-{
-	uint16_t valIndex;
-	uint16_t paramIndex;
-	float outval = 0.0;
-
-	valIndex = filt->currIndex;
-	filt->tabs[valIndex] = val;
-
-	for (paramIndex=0; paramIndex<8; paramIndex++)
-	{
-		outval += (filt->params[paramIndex]) * (filt->tabs[(valIndex+paramIndex)&0x07]);
-	}
-
-	valIndex++;
-	valIndex &= 0x07;
-
-	filt->currIndex = valIndex;
-
-	return outval;
-}
-
-void initFilter(fir_8* theFilter)
-{
-	uint8_t i;
-
-	theFilter->currIndex = 0;
-
-	for (i=0; i<8; i++)
-		theFilter->tabs[i] = 0.0;
-
-	theFilter->params[0] = 0.01;
-	theFilter->params[1] = 0.05;
-	theFilter->params[2] = 0.12;
-	theFilter->params[3] = 0.32;
-	theFilter->params[4] = 0.32;
-	theFilter->params[5] = 0.12;
-	theFilter->params[6] = 0.05;
-	theFilter->params[7] = 0.01;
-}
-
 int main(void)
 {
 	/*MIDI Receiver*/
@@ -142,46 +75,29 @@ int main(void)
 	CODEC_Configuration();
 	CS43L22_Configuration();
 
+	/* Fill up the circular buffer*/
+	int i;
+	for(i = 0; i < 1024; i++){
+		if(i < 512){
+			CircularBuffer1[i] = 0;
+		}
+		else{
+			CircularBuffer1[i] = 4095;
+		}
+	}
 
-	STM_EVAL_LEDInit(LED4);
-
-
-
-	fir_8 filt;
-
-	initFilter(&filt);
 	/* Infinite loop */
     while(1)
     {
 
     	if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
     	{
-    		SPI_I2S_SendData(CODEC_I2S, sample);
+    		bufferPtr++;
+    		bufferPtr &= 1023;		// Wrap around
+    		SPI_I2S_SendData(CODEC_I2S, CircularBuffer1[bufferPtr]);
 
-    		//only update on every second sample to insure that L & R ch. have the same sample value
-    		if (sampleCounter & 0x00000001)
-    		{
-    			sawWave += NOTEFREQUENCY;
-    			if (sawWave > 1.0)
-    				sawWave -= 2.0;
-
-    			filteredSaw = updateFilter(&filt, sawWave);
-
-    			sample = (int16_t)(NOTEAMPLITUDE*filteredSaw);
-    		}
-    		sampleCounter++;
     	}
 
-		if (sampleCounter==48000)
-		{
-			STM_EVAL_LEDOff(LED4);
-
-		}
-		else if (sampleCounter == 96000)
-		{
-			STM_EVAL_LEDOn(LED4);
-			sampleCounter = 0;
-	    }
 	}
 }
 
