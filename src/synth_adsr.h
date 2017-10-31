@@ -2,32 +2,21 @@
  * synth_adsr.h
  *
  *  Created on: 26 Oct 2017
- *      Author: MBELE
+ *      Author: MBELE LEBOHANG
  */
 
+/* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef SYNTH_ADSR_H_
 #define SYNTH_ADSR_H_
 
-#define FULL_VOLUME     31 	/* 5-bit volumes */
+/* Includes ------------------------------------------------------------------*/
+#include "stm32f4xx.h"
 
-// Default envelope values (slightly percussive)
-// Play around with these!
 
-typedef struct{
-	uint8_t ADSR_AttackRate;			/* 0-255 */
+#define MAX_ADSR_AMPLITUDE     		65535
+#define OVERSHOT_ADSR_AMPLITUDE 	65980	/* 0.679% overshot */
 
-	uint8_t ADSR_DecayRate;				/* 0-255 */
 
-	uint8_t ADSR_SustainLevel;			/* 0-255 */
-
-	uint16_t ADSR_ReleaseRate;			/* 0-65535 */
-
-	float	ADSR_Output;
-
-	ADSR_FunctionalState ADSR_State;
-
-	FunctionalState	ADSR_Gate;
-}ADSR_TypeDef;
 
 typedef enum
 {
@@ -39,61 +28,27 @@ typedef enum
 
 } ADSR_FunctionalState;
 
-float ADSR_Process(ADSR_TypeDef* ADSR){
+typedef struct{
+	uint8_t ADSR_AttackTimeConstant;			/* 0-255 */
 
-	switch(ADSR->ADSR_State){
-		case IDLE:
-			// Do nothing
-			break;
-		case ATTACK:
-			// Attack state
-			break;
+	uint8_t ADSR_DecayTimeConstant;				/* 0-255 */
 
-		case DECAY:
-			// Decay state
-			break;
+	uint8_t ADSR_SustainLevel;					/* 0-65535 */
 
-		case SUSTAIN:
-			// Sustain state
-			break;
+	uint16_t ADSR_ReleaseTimeConstant;			/* 0-65535 */
 
-		case RELEASE:
-			// Released state
-			break;
+	float	ADSR_Output;
 
-		default:
-			// Something went wrong
-	}
+	ADSR_FunctionalState ADSR_State;
 
-	return ADSR->ADSR_Output;
-}
+	FunctionalState	ADSR_Gate;
+}ADSR_TypeDef;
 
-void ADSR_UpdateCoefficients(ADSR_TypeDef* ADSR, ADSR_FunctionalState State, float Rate){
 
-	switch(ADSR->ADSR_State){
-		case IDLE:
-			// Do nothing
-			break;
-		case ATTACK:
-			// Update Attack properties
-			break;
 
-		case DECAY:
-			// Update Decay properties
-			break;
+float ADSR_Process(ADSR_TypeDef* ADSR);
 
-		case SUSTAIN:
-			// Update Sustain properties
-			break;
-
-		case RELEASE:
-			// Update Released Release
-			break;
-
-		default:
-			// Something went wrong
-	}
-}
+void ADSR_UpdateCoefficients(ADSR_TypeDef* ADSR, ADSR_FunctionalState State, float Rate);
 
 
 #endif /* SYNTH_ADSR_H_ */

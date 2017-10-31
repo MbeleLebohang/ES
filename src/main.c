@@ -30,25 +30,29 @@ SOFTWARE.
 #include "stm32f4xx.h"
 #include "stm32f4_discovery.h"
 #include "stm32f4_discovery_audio_codec.h"
+#include "synth_adsr.h"
 #include "header.h"
 
-/* Private macro */
-/* Private variables */
+/* Private Macro */
+
+/* Private Variables */
 char MIDI_BYTEx;
 char MIDI_NOTE_ON;
 char Midi_Bytes[3];
 int CircularBuffer1[1024], bufferPtr = 0;
 
 /* Private function prototypes */
+
 /* Private functions */
 
-/**
-**===========================================================================
-**
-**  Abstract: main program
-**
-**===========================================================================
+/*
+===========================================================================
+
+                A b s t r a c t: M a i n   p r o g r a m
+
+===========================================================================
 */
+
 void TIM2_IRQHandler(void) {
 	/* Check if interrupt has occured */
 	if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
@@ -82,44 +86,45 @@ int main(void)
 			CircularBuffer1[i] = 0;
 		}
 		else{
-			CircularBuffer1[i] = 4095;
+			CircularBuffer1[i] = 1;
 		}
 	}
+
 
 	/* Infinite loop */
     while(1)
     {
+		if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
+		{
+			bufferPtr++;
+			bufferPtr &= 1023;		// Wrap around
+			SPI_I2S_SendData(CODEC_I2S,4096* CircularBuffer1[bufferPtr]);
 
-    	if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
-    	{
-    		bufferPtr++;
-    		bufferPtr &= 1023;		// Wrap around
-    		SPI_I2S_SendData(CODEC_I2S, CircularBuffer1[bufferPtr]);
+		}
 
-    	}
 
 	}
 }
 
-/*************************************************************************************************
- * @Brief Clock for different peripherals used for this project.								 *
- *																								 *
- * 		USART6 used for:															 			 *
- *			- Serial communication with MIDI Controller								 			 *																			 *
- * 		GPIOA used for:																			 *
- *		    - DAC output signal																	 *
- *			- I2S_WS signal																		 *
- *		GPIOB used for:																			 *
- *		    - I2C_SDA, I2C_SCL 																	 *																	 *
- *		GPIOC used for:																			 *
- *		    - I2S_MCK, I2S_SCK, I2S_SD 															 *
- *		    - USART Rx and Tx pins														 		 *
- *		GPIOD used for:																			 *
- *		    - Reset pin on CS43L22																 *
- *																								 *
- *		CODEC uses the following peripherals I2C1, I2S and SPI3										 *
- *																								 *
- *************************************************************************************************/
+/*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ | @Brief Clock for different peripherals used for this project.								 |
+ |																								 |
+ | 		USART6 used for:															 			 |
+ |			- Serial communication with MIDI Controller								 			 |																			 *
+ | 		GPIOA used for:																			 |
+ |		    - DAC output signal																	 |
+ |			- I2S_WS signal																		 |
+ |		GPIOB used for:																			 |
+ |		    - I2C_SDA, I2C_SCL 																	 |																	 *
+ |		GPIOC used for:																			 |
+ |		    - I2S_MCK, I2S_SCK, I2S_SD 															 |
+ |		    - USART Rx and Tx pins														 		 |
+ |		GPIOD used for:																			 |
+ |		    - Reset pin on CS43L22																 |
+ |																								 |
+ |		CODEC uses the following peripherals I2C1, I2S and SPI3									 |
+ |																								 |
+ +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART6 | RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
