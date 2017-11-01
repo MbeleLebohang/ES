@@ -556,6 +556,95 @@ uint8_t Read_CODEC_Register(uint8_t mapbyte)
 
 	return receivedByte;
 }
+
+/**
+  * @brief  Writes a Byte to a given register into the audio codec through the
+            control interface (I2C)
+  * @param  RegisterAddr: The address (location) of the register to be written.
+  * @param  RegisterValue: the Byte value to be written into destination register.
+  * @retval 0 if correct communication, else wrong communication
+  */
+static uint32_t Write_CODEC_Register(uint8_t RegisterAddr, uint8_t RegisterValue)
+{
+  uint32_t result = 0;
+
+  /*!< While the bus is busy */
+  CODEC_Timeout = CODEC_TIMEOUT_LONG;
+  while(I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BUSY))
+  {
+    if((CODEC_Timeout--) == 0) return Codec_TIMEOUT_UserCallback();
+  }
+
+  /* Start the config sequence */
+  I2C_GenerateSTART(CODEC_I2C, ENABLE);
+
+  /* Test on EV5 and clear it */
+  CODEC_Timeout = CODEC_FLAG_TIMEOUT;
+  while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_MODE_SELECT))
+  {
+    if((CODEC_Timeout--) == 0) return Codec_TIMEOUT_UserCallback();
+  }
+
+  /* Transmit the slave address and enable writing operation */
+  I2C_Send7bitAddress(CODEC_I2C, CODEC_ADDR, I2C_Direction_Transmitter);
+
+  /* Test on EV6 and clear it */
+  CODEC_Timeout = CODEC_FLAG_TIMEOUT;
+  while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED))
+  {
+    if((CODEC_Timeout--) == 0) return Codec_TIMEOUT_UserCallback();
+  }
+
+  /* Transmit the first address for write operation */
+  I2C_SendData(CODEC_I2C, RegisterAddr);
+
+  /* Test on EV8 and clear it */
+  CODEC_Timeout = CODEC_FLAG_TIMEOUT;
+  while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_BYTE_TRANSMITTING))
+  {
+    if((CODEC_Timeout--) == 0) return Codec_TIMEOUT_UserCallback();
+  }
+
+  /* Prepare the register value to be sent */
+  I2C_SendData(CODEC_I2C, RegisterValue);
+
+  /*!< Wait till all data have been physically transferred on the bus */
+  CODEC_Timeout = CODEC_LONG_TIMEOUT;
+  while(!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BTF))
+  {
+    if((CODEC_Timeout--) == 0) Codec_TIMEOUT_UserCallback();
+  }
+
+  /* End the configuration sequence */
+  I2C_GenerateSTOP(CODEC_I2C, ENABLE);
+
+#ifdef VERIFY_WRITTENDATA
+  /* Verify that the data has been correctly written */
+  result = (Read_CODEC_Register(RegisterAddr) == RegisterValue)? 0:1;
+#endif /* VERIFY_WRITTENDATA */
+
+  /* Return the verifying value: 0 (Passed) or 1 (Failed) */
+  return result;
+}
+
+/**
+  * @brief  Start the audio Codec play feature.
+  * @note   For this codec no Play options are required.
+  * @param  bufferPtr
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t CODEC_Play(uint16_t data)
+{
+
+	if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
+	{
+		SPI_I2S_SendData(CODEC_I2S, data);
+		return 0;
+
+	}
+  /* Return communication control value */
+  return 1;
+}
 /*
  * Callback used by stm32f4_discovery_audio_codec.c.
  * Refer to stm32f4_discovery_audio_codec.h for more info.
@@ -572,4 +661,14 @@ void EVAL_AUDIO_TransferComplete_CallBack(uint32_t pBuffer, uint32_t Size){
 uint16_t EVAL_AUDIO_GetSampleCallBack(void){
   /* TODO, implement your code here */
   return -1;
+}
+
+/**
+  * @brief  Inserts a delay time (not accurate timing).
+  * @param  nCount: specifies the delay time length.
+  * @retval None
+  */
+static void Delay( __IO uint32_t nCount)
+{
+  for (; nCount != 0; nCount--);
 }
