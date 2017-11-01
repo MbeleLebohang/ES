@@ -37,7 +37,11 @@ SOFTWARE.
 char MIDI_BYTEx;
 char MIDI_NOTE_ON;
 char Midi_Bytes[3];
-int CircularBuffer1[1024], bufferPtr = 0;
+uint16_t CircularBuffer1[1024], bufferIdx = 0;
+uint32_t  CODEC_Timeout = CODEC_TIMEOUT_LONG;
+
+/* CODEC User volume (0 => Mute, 100 => Max */
+uint8_t uVolume = 100;
 
 /* Private function prototypes */
 /* Private functions */
@@ -86,18 +90,33 @@ int main(void)
 		}
 	}
 
+	/* Initialise the user button */
+	STM_EVAL_PBInit(BUTTON_USER, BUTTON_MODE_GPIO);
+
 	/* Infinite loop */
     while(1)
     {
+    	CODEC_Play();
 
-    	if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
-    	{
-    		bufferPtr++;
-    		bufferPtr &= 1023;		// Wrap around
-    		SPI_I2S_SendData(CODEC_I2S, CircularBuffer1[bufferPtr]);
+    	/*Adjust the volume when button is pressed */
+    	if(STM_EVAL_PBGetState(BUTTON_USER)){
+    		/* Debounce */
+    		while(STM_EVAL_PBGetState(BUTTON_USER)){}
+
+    		if(CODEC_VolumeCtrl(uVolume) != 0){
+    			while(1){
+
+    			}
+    		}
+
+    		/*Lower the volume by 5% */
+    		uVolume -= 5;
+
+    		if(uVolume < 0){
+    			uVolume = 100;
+    		}
 
     	}
-
 	}
 }
 
@@ -513,6 +532,97 @@ void Send_CODEC_Command(uint8_t controlBytes[], uint8_t numBytes)
 }
 
 /**
+  * @brief  Stops audio Codec playing. It powers down the codec.
+  * @param  CodecPdwnMode: selects the  power down mode.
+  *          - SW_CODEC_PDWN: only mutes the audio codec. When resuming from this
+  *                           mode the codec keeps the previous initialization
+  *                           (no need to re-Initialize the codec registers).
+  *          - HW_CODEC_PDWN: Physically power down the codec. When resuming from this
+  *                           mode, the codec is set to default configuration
+  *                           (user should re-Initialize the codec in order to
+  *                            play again the audio stream).
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t CODEC_Stop(uint32_t CodecPdwnMode)
+{
+  uint32_t counter = 0;
+
+  /* Mute the output first */
+  CODEC_Mute(AUDIO_MUTE_ON);
+
+  if (CodecPdwnMode == CODEC_PDWN_SW)
+  {
+    /* Power down the DAC and the speaker (PMDAC and PMSPK bits)*/
+    counter += Write_CODEC_Register(0x02, 0x9F);
+  }
+  else /* CODEC_PDWN_HW */
+  {
+    /* Power down the DAC components */
+    counter += Write_CODEC_Register(0x02, 0x9F);
+
+    /* Wait at least 100us */
+    Delay(0xFFF);
+
+    /* Reset The pin */
+    GPIO_WriteBit(AUDIO_RESET_GPIO, AUDIO_RESET_PIN, Bit_RESET);
+  }
+
+  return counter;
+}
+
+/**
+  * @brief  Sets higher or lower the codec volume level.
+  * @param  Volume: Initial volume level (from 0 (Mute) to 100 (Max))
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t CODEC_VolumeCtrl(uint8_t Volume)
+{
+	/*if(Volume > 100){
+		Volume = 100;
+	}
+	else if(Volume < 0){
+		Volume = 0;
+	}*/
+	Volume = ((uint8_t)(Volume * 2.55));
+	uint32_t counter = 0;
+
+	if (Volume > 0xE6){
+		/* Set the Master volume */
+		counter += Write_CODEC_Register(0x20, Volume - 0xE7);
+		counter += Write_CODEC_Register(0x21, Volume - 0xE7);
+	}
+	else{
+		/* Set the Master volume */
+		counter += Write_CODEC_Register(0x20, Volume + 0x19);
+		counter += Write_CODEC_Register(0x21, Volume + 0x19);
+	}
+
+return counter;
+}
+/**
+  * @brief  Enables or disables the mute feature on the audio codec.
+  * @param  Cmd: AUDIO_MUTE_ON to enable the mute or AUDIO_MUTE_OFF to disable the
+  *             mute mode.
+  * @retval 0 if correct communication, else wrong communication
+  */
+uint32_t CODEC_Mute(uint32_t Cmd)
+{
+  uint32_t counter = 0;
+
+  /* Set the Mute mode */
+  if (Cmd == AUDIO_MUTE_ON)
+  {
+    counter += Write_CODEC_Register(0x04, 0xFF);
+  }
+  else /* AUDIO_MUTE_OFF Disable the Mute */
+  {
+    counter += Write_CODEC_Register(0x04, 0);
+  }
+
+  return counter;
+}
+
+/**
  * @Brief Read CS43L22 Register
  */
 uint8_t Read_CODEC_Register(uint8_t mapbyte)
@@ -631,19 +741,19 @@ static uint32_t Write_CODEC_Register(uint8_t RegisterAddr, uint8_t RegisterValue
   * @brief  Start the audio Codec play feature.
   * @note   For this codec no Play options are required.
   * @param  bufferPtr
-  * @retval 0 if correct communication, else wrong communication
+  * @retval None
   */
-uint32_t CODEC_Play(uint16_t data)
+void CODEC_Play(void)
 {
 
 	if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
 	{
-		SPI_I2S_SendData(CODEC_I2S, data);
-		return 0;
+		bufferIdx++;
+		bufferIdx &= 1023;		// Wrap around
+		SPI_I2S_SendData(CODEC_I2S, CircularBuffer1[bufferIdx]);
 
 	}
-  /* Return communication control value */
-  return 1;
+
 }
 /*
  * Callback used by stm32f4_discovery_audio_codec.c.
@@ -653,7 +763,13 @@ void EVAL_AUDIO_TransferComplete_CallBack(uint32_t pBuffer, uint32_t Size){
   /* TODO, implement your code here */
   return;
 }
-
+uint32_t Codec_TIMEOUT_UserCallback(void)
+{
+  /* Block communication and all processes */
+  while (1)
+  {
+  }
+}
 /*
  * Callback used by stm324xg_eval_audio_codec.c.
  * Refer to stm324xg_eval_audio_codec.h for more info.

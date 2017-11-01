@@ -95,6 +95,28 @@
 
 #define CODEC_MAPBYTE_INC 0x80
 
+ /* MUTE commands */
+#define CODEC_MUTE_ON                 1
+#define CODEC_MUTE_OFF                0
+
+/* Codec POWER DOWN modes */
+#define HW_CODEC_PDWN                 1
+#define SW_CODEC_PDWN                 2
+
+ /* VOLUME CONVERTER */
+#define CODEC_VOLUME_CONVERT(x)    ((Volume > 100)? 100:((uint8_t)((Volume * 255) / 100)))
+
+ /* The 7 bits Codec address (sent through I2C interface) */
+ #define CODEC_ADDR                   0x94  /* b00100111 */
+
+ /* Maximum Timeout values for flags and events waiting loops. These timeouts are
+    not based on accurate values, they just guarantee that the application will
+    not remain stuck if the I2C communication is corrupted.
+    You may modify these timeout values depending on CPU frequency and application
+    conditions (interrupts routines ...). */
+ #define CODEC_TIMEOUT_FLAG            ((uint32_t)0x1000)
+ #define CODEC_TIMEOUT_LONG            ((uint32_t)(300 * CODEC_TIMEOUT_FLAG))
+
  /*******register map bytes for CS43L22******/
  #define CODEC_MAP_CHIP_ID 0x01
  #define CODEC_MAP_PWR_CTRL1 0x02
@@ -154,7 +176,15 @@ void USARTx_Configuration(void);
 void CODEC_Configuration(void);
 void Send_CODEC_Command(uint8_t[], uint8_t);
 void CS43L22_Configuration(void);
+void CODEC_Play(void);
+uint32_t CODEC_Mute(uint32_t);
+uint32_t CODEC_Stop(uint32_t CodecPdwnMode);
+uint32_t CODEC_VolumeCtrl(uint8_t);
 uint8_t Read_CODEC_Register(uint8_t);
+static uint32_t Write_CODEC_Register(uint8_t, uint8_t);
+
+static void Delay( __IO uint32_t nCount);
+
 
 /**
   * @}
