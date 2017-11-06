@@ -36,7 +36,7 @@ SOFTWARE.
 #include "header.h"
 
 /* Private macro */
-#define BUFFER_SIZE			1024
+#define BUFFER_SIZE			250
 #define TIMER2_PRESCALER	2
 /* Private variables */
 char MIDI_BYTEx;
@@ -46,23 +46,17 @@ char Midi_Bytes[3];
 int CircularBuffer_Square[BUFFER_SIZE], bufferPtr = 0;
 RCC_ClocksTypeDef RCC_Clocks;
 
-							/*LOWEST NOTE*/
-double LOWER_NOTES_ARR[] = {6108, 5765, 5442, 5136, 4848, 4576, 4319,
-							4076, 3847, 3631, 3428, 3235, 3054, 2882,
-							2720, 2568, 2423, 2287, 2159, 2038, 1923,
-							1815, 1713, 1617, 1526, 1441, 1360, 1283,
-							1211, 1143, 1079, 1018, 961, 907, 856,
-							808, 763, 720, 679, 641, 605, 571,
-							539, 509, 480, 453, 428, 404, 381} ;
+extern uint16_t LOWER_NOTES_ARR[];
 
-double UPPER_NOTES_ARR[] = {359, 339, 320, 302, 285, 269, 254,
-							240, 226, 213, 201, 190, 179, 169,
-							160, 151, 142, 134, 126, 119, 113,
-							106, 100, 94, 89, 84, 79, 75,
-							71, 66, 63, 59, 56, 53, 50,
-							47, 44, 42, 39, 37, 35, 33,
-							31, 29, 27, 26, 24, 23, 22};
-												/* HIGHEST NOTE*/
+extern uint16_t UPPER_NOTES_ARR[];
+
+extern uint16_t SQUARE_Wave[];
+
+extern uint16_t TRIANGLE_Wave[];
+
+extern uint16_t SAWTOOTH_Wave[];
+
+extern uint16_t SINE_Wave[];
 
 /* Private function prototypes */
 /* Private function prototypes -----------------------------------------------*/
@@ -90,7 +84,7 @@ void TIM2_IRQHandler(void) {
     	{
     		bufferPtr++;
     		bufferPtr &= BUFFER_SIZE - 1;		// Wrap around
-    		SPI_I2S_SendData(CODEC_I2S, CircularBuffer_Square[bufferPtr]);
+    		SPI_I2S_SendData(CODEC_I2S, SINE_Wave[bufferPtr]);
 
     	}
 	}
@@ -107,7 +101,7 @@ int main(void)
 
 	RCC_Configuration();
 
-	TIM_Configuration(46,TIMER2_PRESCALER);
+	TIM_Configuration(381,TIMER2_PRESCALER);
 
 	NVIC_Configuration();
 
@@ -125,24 +119,24 @@ int main(void)
 	/* Initialize LEDs */
 	STM_EVAL_LEDInit(LED3);
 
-	/* Fill up the circular buffer*/
-	int i;
-	for(i = 0; i < BUFFER_SIZE; i++){
-	if(i < BUFFER_SIZE/2){
-			CircularBuffer_Square[i] = 0;
-		}
-		else{
-			CircularBuffer_Square[i] = 4095;
-		}
-	}
 
-
+	/*Initialize the user button*/
+	STM_EVAL_PBInit(BUTTON_USER, BUTTON_MODE_GPIO);
 	/* Turn on LEDs */
 	STM_EVAL_LEDOn(LED3);
 
+	int noteIndex=0;
 	/* Infinite loop */
 	while (1)
 	{
+		if(STM_EVAL_PBGetState(BUTTON_USER)){
+			while(STM_EVAL_PBGetState(BUTTON_USER)){}
+			if(noteIndex > 48){
+				noteIndex = 0;
+			}
+			TIM2->ARR = LOWER_NOTES_ARR[noteIndex++];
+
+		}
 	}
 }
 
