@@ -30,6 +30,9 @@ SOFTWARE.
 #include "stm32f4xx.h"
 #include "stm32f4_discovery.h"
 #include "stm32f4_discovery_audio_codec.h"
+#include "stm32f4_discovery_lis302dl.h"
+#include <stdio.h>
+#include "stm32f4xx_it.h"
 #include "header.h"
 
 /* Private macro */
@@ -40,7 +43,9 @@ char Midi_Bytes[3];
 int CircularBuffer1[1024], bufferPtr = 0;
 
 /* Private function prototypes */
-/* Private functions */
+/* Private function prototypes -----------------------------------------------*/
+static void MEMS_Configuration(void);
+static void EXTILine_Configuration(void);
 
 /**
 **===========================================================================
@@ -71,6 +76,12 @@ int main(void)
 
 	NVIC_Configuration();
 
+	/* MEMS Accelerometre configure to manage PAUSE, RESUME and Controle Volume operation */
+	MEMS_Configuration();
+
+	/* EXTI configue to detect interrupts on Z axis click and on Y axis high event */
+	EXTILine_Configuration();
+
 	GPIO_Configuration();
 	CODEC_Configuration();
 	CS43L22_Configuration();
@@ -85,6 +96,9 @@ int main(void)
 			CircularBuffer1[i] = 4095;
 		}
 	}
+	/*Initialize the user button*/
+	STM_EVAL_PBInit(BUTTON_USER, BUTTON_MODE_GPIO);
+	int volume = 50;
 
 	/* Infinite loop */
     while(1)
@@ -96,6 +110,15 @@ int main(void)
     		bufferPtr &= 1023;		// Wrap around
     		SPI_I2S_SendData(CODEC_I2S, CircularBuffer1[bufferPtr]);
 
+    	}
+
+    	/* Volume test */
+    	if(STM_EVAL_PBGetState(BUTTON_USER)){
+    		while(STM_EVAL_PBGetState(BUTTON_USER)){}
+    		if(volume > 100){
+    			volume = 0;
+    		}
+    		CODEC_Volume_CTRL(volume++);
     	}
 
 	}
@@ -220,6 +243,117 @@ void CODEC_Configuration(void){
 
 	I2C_Cmd(CODEC_I2C, ENABLE);
 	I2C_Init(CODEC_I2C, &I2C_InitStructure);
+}
+
+/**
+  * @brief  Configure the volune
+  * @param  vol: volume value (0-100)
+  * @retval None
+  */
+uint8_t CODEC_Volume_CTRL(uint8_t vol){
+  EVAL_AUDIO_VolumeCtl(vol);
+  return 0;
+}
+
+/**
+* @brief  configure the mems accelometer to  Control Volume operation
+* @param  None
+* @retval None
+*/
+static void MEMS_Configuration(void)
+{
+  uint8_t ctrl = 0;
+
+  LIS302DL_InitTypeDef  LIS302DL_InitStruct;
+  LIS302DL_InterruptConfigTypeDef LIS302DL_InterruptStruct;
+
+  /* Set configuration of LIS302DL*/
+  LIS302DL_InitStruct.Power_Mode = LIS302DL_LOWPOWERMODE_ACTIVE;
+  LIS302DL_InitStruct.Output_DataRate = LIS302DL_DATARATE_100;
+  LIS302DL_InitStruct.Axes_Enable = LIS302DL_X_ENABLE | LIS302DL_Y_ENABLE | LIS302DL_Z_ENABLE;
+  LIS302DL_InitStruct.Full_Scale = LIS302DL_FULLSCALE_2_3;
+  LIS302DL_InitStruct.Self_Test = LIS302DL_SELFTEST_NORMAL;
+  LIS302DL_Init(&LIS302DL_InitStruct);
+
+  /* Set configuration of Internal High Pass Filter of LIS302DL*/
+  LIS302DL_InterruptStruct.Latch_Request = LIS302DL_INTERRUPTREQUEST_LATCHED;
+  LIS302DL_InterruptStruct.SingleClick_Axes = LIS302DL_CLICKINTERRUPT_Z_ENABLE;
+  LIS302DL_InterruptStruct.DoubleClick_Axes = LIS302DL_DOUBLECLICKINTERRUPT_Z_ENABLE;
+  LIS302DL_InterruptConfig(&LIS302DL_InterruptStruct);
+
+  /* Configure Interrupt control register: enable Click interrupt on INT1 and
+     INT2 on Z axis high event */
+  ctrl = 0x3F;
+  LIS302DL_Write(&ctrl, LIS302DL_CTRL_REG3_ADDR, 1);
+
+  /* Enable Interrupt generation on click on Z axis */
+  ctrl = 0x50;
+  LIS302DL_Write(&ctrl, LIS302DL_CLICK_CFG_REG_ADDR, 1);
+
+  /* Configure Click Threshold on X/Y axis (10 x 0.5g) */
+  ctrl = 0xAA;
+  LIS302DL_Write(&ctrl, LIS302DL_CLICK_THSY_X_REG_ADDR, 1);
+
+  /* Configure Click Threshold on Z axis (10 x 0.5g) */
+  ctrl = 0x0A;
+  LIS302DL_Write(&ctrl, LIS302DL_CLICK_THSZ_REG_ADDR, 1);
+
+  /* Enable interrupt on Y axis high event */
+  ctrl = 0x4C;
+  LIS302DL_Write(&ctrl, LIS302DL_FF_WU_CFG1_REG_ADDR, 1);
+
+  /* Configure Time Limit */
+  ctrl = 0x03;
+  LIS302DL_Write(&ctrl, LIS302DL_CLICK_TIMELIMIT_REG_ADDR, 1);
+
+  /* Configure Latency */
+  ctrl = 0x7F;
+  LIS302DL_Write(&ctrl, LIS302DL_CLICK_LATENCY_REG_ADDR, 1);
+
+  /* Configure Click Window */
+  ctrl = 0x7F;
+  LIS302DL_Write(&ctrl, LIS302DL_CLICK_WINDOW_REG_ADDR, 1);
+
+}
+
+/**
+  * @brief  Configures EXTI Line0 (connected to PA0 pin) in interrupt mode
+  * @param  None
+  * @retval None
+  */
+static void EXTILine_Configuration(void)
+{
+  GPIO_InitTypeDef   GPIO_InitStructure;
+  NVIC_InitTypeDef   NVIC_InitStructure;
+  EXTI_InitTypeDef   EXTI_InitStructure;
+  /* Enable GPIOA clock */
+  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
+  /* Enable SYSCFG clock */
+  RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+  /* Configure PE0 and PE1 pins as input floating */
+  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0|GPIO_Pin_1;
+  GPIO_Init(GPIOE, &GPIO_InitStructure);
+
+  /* Connect EXTI Line to PE1 pins */
+  SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOE, EXTI_PinSource1);
+
+  /* Configure EXTI Line1 */
+  EXTI_InitStructure.EXTI_Line = EXTI_Line1;
+  EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+  EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
+  EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+  EXTI_Init(&EXTI_InitStructure);
+
+  NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
+
+  /* Enable and set EXTI Line0 Interrupt to the lowest priority */
+  NVIC_InitStructure.NVIC_IRQChannel = EXTI1_IRQn;
+  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
+  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init(&NVIC_InitStructure);
 }
 
 /* *
@@ -556,6 +690,29 @@ uint8_t Read_CODEC_Register(uint8_t mapbyte)
 
 	return receivedByte;
 }
+/**
+  * @brief  MEMS accelerometre management of the timeout situation.
+  * @param  None.
+  * @retval None.
+  */
+uint32_t LIS302DL_TIMEOUT_UserCallback(void)
+{
+  /* MEMS Accelerometer Timeout error occured */
+  while (1)
+  {
+  }
+}
+#ifndef USE_DEFAULT_TIMEOUT_CALLBACK
+/**
+  * @brief  Basic management of the timeout situation.
+  * @param  None.
+  * @retval None.
+  */
+uint32_t Codec_TIMEOUT_UserCallback(void)
+{
+  return (0);
+}
+#endif /* USE_DEFAULT_TIMEOUT_CALLBACK */
 /*
  * Callback used by stm32f4_discovery_audio_codec.c.
  * Refer to stm32f4_discovery_audio_codec.h for more info.

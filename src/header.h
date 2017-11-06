@@ -152,6 +152,7 @@ void NVIC_Configuration(void);
 void USARTx_Configuration(void);
 
 void CODEC_Configuration(void);
+uint8_t CODEC_Volume_CTRL(uint8_t vol);
 void Send_CODEC_Command(uint8_t[], uint8_t);
 void CS43L22_Configuration(void);
 uint8_t Read_CODEC_Register(uint8_t);
