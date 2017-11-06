@@ -80,14 +80,40 @@ void TIM2_IRQHandler(void) {
 		/* WHAT EVER YOU NEED TO DO IN THE INTERRUPT HANDLER GOES HERE */
 		STM_EVAL_LEDToggle(LED3);
 
-    	if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
-    	{
-    		bufferPtr++;
-    		bufferPtr &= BUFFER_SIZE - 1;		// Wrap around
-    		SPI_I2S_SendData(CODEC_I2S, SINE_Wave[bufferPtr]);
-
-    	}
 	}
+}
+
+void USART6_IRQHandler() {
+	// Read the data
+	uint16_t data = USART_ReceiveData(USART6);
+
+	if (data/16 == 0x9) {
+		//If it has just received a new status byte
+		MIDI_BYTEx = 1;
+		MIDI_NOTE_ON = 1;
+	}
+	else {
+		//If not receiving a status byte and byte_no > 3, assume running_status byte(s)
+		//If some other status byte
+		if ((data >> 7) == 1){
+			MIDI_NOTE_ON = 0;
+		}
+
+		if (MIDI_BYTEx > 3){
+			MIDI_BYTEx = 2;			//Running status
+		}
+	}
+
+	//Read in byte
+	Midi_Bytes[MIDI_BYTEx-1] = USART_ReceiveData(USART6);
+	if (MIDI_BYTEx == 3 && MIDI_NOTE_ON == 1 && Midi_Bytes[2] != 0) {
+		//If the current command is NOTE ON
+		if (Midi_Bytes[0]/16 == 0x9) {
+			//Finish reading block
+
+		}
+	}
+	MIDI_BYTEx++;
 }
 
 int main(void)
@@ -101,42 +127,22 @@ int main(void)
 
 	RCC_Configuration();
 
-	TIM_Configuration(381,TIMER2_PRESCALER);
+	GPIO_Configuration();
+
+	USARTx_Configuration();
 
 	NVIC_Configuration();
 
-	/* MEMS Accelerometre configure to manage PAUSE, RESUME and Controle Volume operation */
-	MEMS_Configuration();
-
-	/* EXTI configue to detect interrupts on Z axis click and on Y axis high event */
-	EXTILine_Configuration();
-
-	GPIO_Configuration();
-	CODEC_Configuration();
-	CS43L22_Configuration();
-
-	CODEC_Volume_CTRL(100);
 	/* Initialize LEDs */
 	STM_EVAL_LEDInit(LED3);
 
-
-	/*Initialize the user button*/
-	STM_EVAL_PBInit(BUTTON_USER, BUTTON_MODE_GPIO);
 	/* Turn on LEDs */
 	STM_EVAL_LEDOn(LED3);
 
-	int noteIndex=0;
 	/* Infinite loop */
 	while (1)
 	{
-		if(STM_EVAL_PBGetState(BUTTON_USER)){
-			while(STM_EVAL_PBGetState(BUTTON_USER)){}
-			if(noteIndex > 48){
-				noteIndex = 0;
-			}
-			TIM2->ARR = LOWER_NOTES_ARR[noteIndex++];
 
-		}
 	}
 }
 
