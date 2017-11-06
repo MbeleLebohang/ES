@@ -36,11 +36,32 @@ SOFTWARE.
 #include "header.h"
 
 /* Private macro */
+#define BUFFER_SIZE			256
+#define TIMER2_PRESCALER	2
 /* Private variables */
 char MIDI_BYTEx;
 char MIDI_NOTE_ON;
 char Midi_Bytes[3];
-int CircularBuffer1[1024], bufferPtr = 0;
+
+int CircularBuffer[BUFFER_SIZE], bufferPtr = 0;
+RCC_ClocksTypeDef RCC_Clocks;
+
+
+double UPPER_NOTES[] = {7458.62, 7040.00, 6644.88, 6271.93, 5919.91, 5587.65, 5274.04, 4978.03,
+						4698.64, 4434.92, 4186.01, 3951.07, 3729.31, 3520.00, 3322.44, 3135.96,
+						2959.96, 2793.83, 2637.02, 2489.02, 2349.32, 2217.46, 2093.00, 1975.53,
+						1864.66, 1760.00, 1661.22, 1567.98, 1479.98, 1396.91, 1318.51, 1244.51,
+						1174.66, 1108.73, 1046.50, 987.767, 932.328, 880.000, 830.609, 783.991,
+						739.989, 698.456, 659.255, 622.254, 587.330, 554.365, 523.251, 493.883,
+						466.164, 440.000};
+
+
+double LOWER_NOTES[] = {415.305, 391.995, 369.994, 349.228, 329.628, 311.127, 293.665, 277.183,
+						261.626, 246.942, 233.082, 220.000, 207.652, 195.998, 184.997, 174.614,
+						164.814, 155.563, 146.832, 138.591, 130.813, 123.471, 116.541, 110.000,
+						103.826, 97.9989, 92.4986, 87.3071, 82.4069, 77.7817, 73.4162, 69.2957,
+						65.4064, 61.7354, 58.2705, 55.0000, 51.9130, 48.9995, 46.2493, 43.6536,
+						41.2035, 38.8909, 36.7081, 34.6479, 32.7032, 30.8677, 29.1353, 27.5000};
 
 /* Private function prototypes */
 /* Private function prototypes -----------------------------------------------*/
@@ -61,8 +82,13 @@ void TIM2_IRQHandler(void) {
 		/* Clear interrupt pending bit */
 		TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
 
-		/* WHAT EVER YOU NEED TO DO IN THE INTERRUPT HANDLER GOES HERE */
-		STM_EVAL_LEDToggle(LED3);
+    	if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
+    	{
+    		bufferPtr++;
+    		bufferPtr &= BUFFER_SIZE - 1;		// Wrap around
+    		SPI_I2S_SendData(CODEC_I2S, CircularBuffer[bufferPtr]);
+
+    	}
 	}
 }
 
@@ -71,6 +97,10 @@ int main(void)
 {
 	/*MIDI Receiver*/
 	SystemInit();
+
+	/* SysTick end of count event each 10ms */
+	RCC_GetClocksFreq(&RCC_Clocks);
+	SysTick_Config(RCC_Clocks.HCLK_Frequency / 100);
 
 	RCC_Configuration();
 
@@ -86,14 +116,17 @@ int main(void)
 	CODEC_Configuration();
 	CS43L22_Configuration();
 
+
+	TIM_Configuration(191,TIMER2_PRESCALER);
+
 	/* Fill up the circular buffer*/
 	int i;
 	for(i = 0; i < 1024; i++){
 		if(i < 512){
-			CircularBuffer1[i] = 0;
+			CircularBuffer[i] = 0;
 		}
 		else{
-			CircularBuffer1[i] = 4095;
+			CircularBuffer[i] = 4095;
 		}
 	}
 	/*Initialize the user button*/
@@ -103,14 +136,6 @@ int main(void)
 	/* Infinite loop */
     while(1)
     {
-
-    	if (SPI_I2S_GetFlagStatus(CODEC_I2S, SPI_I2S_FLAG_TXE))
-    	{
-    		bufferPtr++;
-    		bufferPtr &= 1023;		// Wrap around
-    		SPI_I2S_SendData(CODEC_I2S, CircularBuffer1[bufferPtr]);
-
-    	}
 
     	/* Volume test */
     	if(STM_EVAL_PBGetState(BUTTON_USER)){
@@ -170,6 +195,13 @@ void NVIC_Configuration(void){
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
 	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_Init(&NVIC_InitStructure);
+
+
+	/* Enable the TIM2 global Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+
+	NVIC_Init(&NVIC_InitStructure);
+
 }
 
 /*************************************************************************************************
@@ -361,12 +393,12 @@ static void EXTILine_Configuration(void)
  *  @args interval : 84000 = 1ms
  **/
 
-void TIM_Configuration(int interval) {
+void TIM_Configuration(uint16_t period, uint16_t prescaler) {
 	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
 
 	/* Configure the timer*/
-	TIM_TimeBaseInitStruct.TIM_Period = interval - 1;
-	TIM_TimeBaseInitStruct.TIM_Prescaler = 8400 - 1;
+	TIM_TimeBaseInitStruct.TIM_Period = period - 1;
+	TIM_TimeBaseInitStruct.TIM_Prescaler = prescaler - 1;
 	TIM_TimeBaseInitStruct.TIM_ClockDivision = 0;
 	TIM_TimeBaseInitStruct.TIM_RepetitionCounter = TIM_CounterMode_Up;
 
@@ -375,8 +407,6 @@ void TIM_Configuration(int interval) {
 
 	/* Start the count */
 	TIM_Cmd(TIM2, ENABLE);
-
-	NVIC_EnableIRQ(TIM2_IRQn); // Enable IRQ for TIM5 in NVIC
 
 	/* Enable timer interrupt */
 	TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
