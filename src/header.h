@@ -91,6 +91,7 @@ void ADC_Configuration(void);
 void RCC_Configuration(void);
 void DAC_Configuration(void);
 void TIM_Configuration(int interval);
+void DMA_Configuration(uint16_t*);
 
 void NVIC_Configuration(void);
 void USARTx_Configuration(void);
