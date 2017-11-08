@@ -69,6 +69,7 @@ int main(void)
 
   USARTx_Configuration();
 
+  STM_EVAL_LEDInit(LED3);
   /* Infinite loop */
   while (1)
   {
@@ -245,10 +246,7 @@ void ADC_Configuration(void){
 }
 
 void USART6_IRQHandler() {
-	// Read the data
-	uint16_t data = USART_ReceiveData(USART6);
-
-	if (data/16 == 0x9) {
+	if (USART6->DR/16 == 0x9) {
 		//If it has just received a new status byte
 		MIDI_BYTEx = 1;
 		MIDI_NOTE_ON = 1;
@@ -256,7 +254,7 @@ void USART6_IRQHandler() {
 	else {
 		//If not receiving a status byte and byte_no > 3, assume running_status byte(s)
 		//If some other status byte
-		if ((data >> 7) == 1){
+		if ((USART6->DR >> 7) == 1){
 			MIDI_NOTE_ON = 0;
 		}
 
@@ -267,10 +265,17 @@ void USART6_IRQHandler() {
 
 	//Read in byte
 	Midi_Bytes[MIDI_BYTEx-1] = USART_ReceiveData(USART6);
+
 	if (MIDI_BYTEx == 3 && MIDI_NOTE_ON == 1 && Midi_Bytes[2] != 0) {
 		//If the current command is NOTE ON
 		if (Midi_Bytes[0]/16 == 0x9) {
 			//Finish reading block
+			// calculate the new ARR
+			char data1 =  Midi_Bytes[0];
+			data1 =  Midi_Bytes[1];
+			data1 =  Midi_Bytes[2];
+			data1 =  Midi_Bytes[0];
+			STM_EVAL_LEDToggle(LED3);
 
 		}
 	}
