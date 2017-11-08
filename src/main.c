@@ -29,6 +29,7 @@
 #include "stm32f4xx.h"
 #include "stm32f4_discovery.h"
 #include <math.h>
+#include "header.h"
 
 /* Private macro */
 #define DACBUFFERSIZE 		256
@@ -37,16 +38,12 @@
 #define TIMER_CLOCK			84E6 /* TIM6 runs at 84MHz */
 /* Private variables */
 uint16_t DACBuffer1[DACBUFFERSIZE]; 	/* Array for  waveform 1*/
-uint16_t DACBuffer2[DACBUFFERSIZE]; 	/* Array for  waveform 2*/
+char MIDI_BYTEx;
+char MIDI_NOTE_ON;
+char Midi_Bytes[3];
+
 /* Private function prototypes */
-void RCC_Configuration(void);
-void DMA_Configuration( uint16_t* wavBuffer );
-void NVIC_Configuration(void);
-void GPIO_Configuration(void);
-void UART_Configuration(void);
-void Timer_Configuration(uint16_t wavPeriod, uint16_t preScaler);
-void DAC_Configuration(void);
-void delay_ms(uint32_t milli);
+
 
 /*******************************************************************************
 * Function Name  : TIM2_IRQHandler
@@ -78,12 +75,6 @@ int main(void)
 	uint32_t timerFreq;
 	uint16_t timerPeriod;
 	uint16_t n;
-	uint16_t m;
-	uint32_t buttonVal;
-	uint8_t buffNum = 1;
-
-	/* Calculate the gradient of the Sawtooth */
-	m = (uint16_t) ( 4095 / DACBUFFERSIZE);
 
 	/* Create wave table for sinewave */
 	for (n = 0; n<DACBUFFERSIZE; n++)
@@ -109,8 +100,11 @@ int main(void)
 	/* Configure the GPIO ports */
 	GPIO_Configuration();
 
+	/* Configure the USART6 MIDI receiver */
+	USARTx_Configuration();
+
 	/* Timer Configuration */
-	Timer_Configuration( timerPeriod, TIMER6_PRESCALER );
+	TIM_Configuration(timerPeriod);
 
 	/* DAC Configuration */
 	DAC_Configuration();
@@ -148,9 +142,101 @@ void NVIC_Configuration(void)
 {
 	NVIC_InitTypeDef NVIC_InitStructure;
 
+	/* Configure the Priority Group to 2 bits */
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+
+	/* Enable the USARTx Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = USART6_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
 }
 
+/*************************************************************************************************
+ * @Brief USART6_RECIEVER for MIDI input.														 *
+ *																								 *
+ * 		USART6 configured as follows:															 *
+ *																								 *
+ *       - BaudRate = 10500000 baud																 *
+ * 		   - Maximum BaudRate that can be achieved when using the Oversampling by 8				 *
+ *		     is: (USART APB Clock / 8)															 *
+ *			 Example:																			 *
+ *			    - (USART6 APB2 Clock / 8) = (84 MHz / 8) = 10500000 baud						 *
+ *       - Word Length = 8 Bits								 									 *
+ *       - one Stop Bit																			 *
+ *       - No parity																			 *
+ *       - Hardware flow control disabled (RTS and CTS signals)									 *
+ *       - Receive and transmit enabled															 *
+ *************************************************************************************************/
 
+void USARTx_Configuration(void) {
+
+	USART_InitTypeDef USART_InitStructure;
+
+	/* Enable the USART OverSampling by 8 */
+	USART_OverSampling8Cmd(USART6, ENABLE);
+
+	// USART6 configuration
+	USART_InitStructure.USART_BaudRate = 31250;
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;
+	USART_InitStructure.USART_Parity = USART_Parity_No;
+	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+
+	USART_Init(USART6, &USART_InitStructure);
+
+	//Enables USART 6 and receiver
+	USART_Cmd(USART6, ENABLE);
+
+	//Enable RXNE interrupt
+	USART_ITConfig(USART6, USART_IT_RXNE, ENABLE);
+}
+void USART6_IRQHandler() {
+	if (USART_GetITStatus(USART6, USART_IT_RXNE) != RESET)
+	{
+		USART_ClearITPendingBit(USART6, USART_IT_RXNE);
+		//Do stuff here
+		if (USART6->DR/16 == 0x9) {
+				//If it has just received a new status byte
+				MIDI_BYTEx = 1;
+				MIDI_NOTE_ON = 1;
+			}
+			else {
+				//If not receiving a status byte and byte_no > 3, assume running_status byte(s)
+				//If some other status byte
+				if ((USART6->DR >> 7) == 1){
+					MIDI_NOTE_ON = 0;
+				}
+
+				if (MIDI_BYTEx > 3){
+					MIDI_BYTEx = 2;			//Running status
+				}
+			}
+
+			//Read in byte
+			Midi_Bytes[MIDI_BYTEx-1] = USART6->DR;
+
+			if (MIDI_BYTEx == 3 && MIDI_NOTE_ON == 1 && Midi_Bytes[2] != 0) {
+				//If the current command is NOTE ON
+				if (Midi_Bytes[0]/16 == 0x9) {
+					//Finish reading block
+					// calculate the new ARR
+					char data1 =  Midi_Bytes[0];
+					data1 =  Midi_Bytes[1];
+					data1 =  Midi_Bytes[2];
+					data1 =  Midi_Bytes[0];
+
+					STM_EVAL_LEDToggle(LED3);
+
+				}
+			}
+			MIDI_BYTEx++;
+
+	}
+}
 /**
   * @brief  Configures the different GPIO ports.
   * @param  None
@@ -158,16 +244,28 @@ void NVIC_Configuration(void)
   */
 void GPIO_Configuration(void)
 {
-	GPIO_InitTypeDef GPIO_InitStruct;
+	GPIO_InitTypeDef GPIO_InitStructure;
 
 	/* Pack the struct */
-	GPIO_InitStruct.GPIO_Pin = GPIO_Pin_4;
-	GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStruct.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStruct.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
 
 	/* Call Init function */
-	GPIO_Init(GPIOA, &GPIO_InitStruct);
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	/* Configure USART6 Tx and Rx as alternate function push-pull for MIDI Receiver*/
+	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed 	= GPIO_Speed_100MHz;
+	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Pin   	= USARTx_TX_PIN | USARTx_RX_PIN;
+
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+	// Alternate function PC 6-7 to USART_6
+	GPIO_PinAFConfig(GPIOC, USARTx_TX_SOURCE, USARTx_TX_AF);
+	GPIO_PinAFConfig(GPIOC, USARTx_RX_SOURCE, USARTx_RX_AF);
 
 }
 
@@ -212,13 +310,13 @@ void DMA_Configuration( uint16_t* wavBuffer )
   * @param  wavePeriod (period of timer), preScaler (prescaler for timer)
   * @retval : None
   */
-void Timer_Configuration(uint16_t wavPeriod, uint16_t preScaler)
+void TIM_Configuration(uint16_t wavPeriod)
 {
 	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStruct;
 
 	/* pack Timer struct */
 	TIM_TimeBaseStruct.TIM_Period = wavPeriod-1;
-	TIM_TimeBaseStruct.TIM_Prescaler = preScaler-1;
+	TIM_TimeBaseStruct.TIM_Prescaler = TIMER6_PRESCALER -1;
 	TIM_TimeBaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
 	TIM_TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
 	TIM_TimeBaseStruct.TIM_RepetitionCounter = 0x0000;

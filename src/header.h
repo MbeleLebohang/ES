@@ -90,11 +90,13 @@ void GPIO_Configuration(void);
 void ADC_Configuration(void);
 void RCC_Configuration(void);
 void DAC_Configuration(void);
-void TIM_Configuration(int interval);
+void TIM_Configuration(uint16_t interval);
 void DMA_Configuration(uint16_t*);
 
 void NVIC_Configuration(void);
 void USARTx_Configuration(void);
+
+void delay_ms(uint32_t milli);
 
 /**
   * @}
