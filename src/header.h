@@ -77,6 +77,11 @@
 /** @defgroup STM32F4_DISCOVERY_LOW_LEVEL_Exported_Functions
   * @{
   */
+ /************** Type Defs *********************/
+typedef enum{
+	MIDI_UPPER_NOTE_SECTION = 0,
+	MIDI_LOWER_NOTE_SECTION = 1
+}MIDI_NoteSectionTypeDef;
 
 /************** Definition for USARTx resources *********************/
 #define USARTx_TX_PIN                    GPIO_Pin_6
@@ -146,7 +151,11 @@ void GPIO_Configuration(void);
 void ADC_Configuration(void);
 void RCC_Configuration(void);
 void DAC_Configuration(void);
-void TIM_Configuration(uint16_t period, uint16_t prescaler);
+void TIM_Configuration(uint16_t period);
+void DMA_Configuration(uint16_t*);
+
+void NVIC_Configuration(void);
+void USARTx_Configuration(void);
 
 
 void NVIC_Configuration(void);

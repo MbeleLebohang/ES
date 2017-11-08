@@ -39,12 +39,15 @@ SOFTWARE.
 #define BUFFER_SIZE			250
 #define TIMER2_PRESCALER	2
 /* Private variables */
+/* Private macro */
+#define TIMER6_PRESCALER	2 	/* produces a 42MHz tick */
+#define TIMER_CLOCK			84E6 /* TIM6 runs at 84MHz */
+
+/* Private variables */
 char MIDI_BYTEx;
 char MIDI_NOTE_ON;
 char Midi_Bytes[3];
-
-int CircularBuffer_Square[BUFFER_SIZE], bufferPtr = 0;
-RCC_ClocksTypeDef RCC_Clocks;
+MIDI_NoteSectionTypeDef MIDI_Note_section = MIDI_UPPER_NOTE_SECTION;
 
 extern uint16_t LOWER_NOTES_ARR[];
 
@@ -60,8 +63,6 @@ extern uint16_t SINE_Wave[];
 
 /* Private function prototypes */
 /* Private function prototypes -----------------------------------------------*/
-static void MEMS_Configuration(void);
-static void EXTILine_Configuration(void);
 
 /**
 **===========================================================================
@@ -70,50 +71,71 @@ static void EXTILine_Configuration(void);
 **
 **===========================================================================
 */
-void TIM2_IRQHandler(void) {
-	/* Check if interrupt has occured */
-	if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
-	{
-		/* Clear interrupt pending bit */
-		TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
-
-		/* WHAT EVER YOU NEED TO DO IN THE INTERRUPT HANDLER GOES HERE */
-		STM_EVAL_LEDToggle(LED3);
-
-	}
-}
-
+/**
+ * @brief: IRQ Handler for MIDI Receiver
+ *
+ */
 void USART6_IRQHandler() {
-	// Read the data
-	uint16_t data = USART_ReceiveData(USART6);
+	if (USART_GetITStatus(USART6, USART_IT_RXNE) != RESET)
+	{
+		USART_ClearITPendingBit(USART6, USART_IT_RXNE);
+		//Do stuff here
+		if (USART6->DR/16 == 0x9) {
+				//If it has just received a new status byte
+				MIDI_BYTEx = 1;
+				MIDI_NOTE_ON = 1;
+		}
+		else {
+			//If not receiving a status byte and byte_no > 3, assume running_status byte(s)
+			//If some other status byte
+			if ((USART6->DR >> 7) == 1){
+				MIDI_NOTE_ON = 0;
+			}
 
-	if (data/16 == 0x9) {
-		//If it has just received a new status byte
-		MIDI_BYTEx = 1;
-		MIDI_NOTE_ON = 1;
-	}
-	else {
-		//If not receiving a status byte and byte_no > 3, assume running_status byte(s)
-		//If some other status byte
-		if ((data >> 7) == 1){
-			MIDI_NOTE_ON = 0;
+			if (MIDI_BYTEx > 3){
+				MIDI_BYTEx = 2;			//Running status
+			}
 		}
 
-		if (MIDI_BYTEx > 3){
-			MIDI_BYTEx = 2;			//Running status
-		}
-	}
+		//Read in byte
+		Midi_Bytes[MIDI_BYTEx-1] = USART6->DR;
 
-	//Read in byte
-	Midi_Bytes[MIDI_BYTEx-1] = USART_ReceiveData(USART6);
-	if (MIDI_BYTEx == 3 && MIDI_NOTE_ON == 1 && Midi_Bytes[2] != 0) {
-		//If the current command is NOTE ON
-		if (Midi_Bytes[0]/16 == 0x9) {
-			//Finish reading block
+		if (MIDI_BYTEx == 3 && MIDI_NOTE_ON == 1 && Midi_Bytes[2] != 0) {
+			//If the current command is NOTE ON
+			if (Midi_Bytes[0]/16 == 0x9) {
+				//Finish reading block
+				// Set the new ARR depending on the key pressed
 
+				/**
+				 *  The three bytes from MIDI messages are in a format 0xnc, 0xkk, 0xvv
+				 *	Where:
+				 *		n is the command (note on (0x9) or off(0x8))
+				 *		c is the channel (1 to 16)
+				 *		kk is the key number (0 to 127, where middle C is key number 60)
+				 *		vv is the striking velocity (0 to 127)
+				 */
+
+				if(MIDI_Note_section == MIDI_UPPER_NOTE_SECTION){
+					// 36 because MIDI messages from our MIDI controller gives 36 for 1st key press
+					// and 84 for last key press. It has 49 Keys
+					TIM6->ARR = UPPER_NOTES_ARR[(uint8_t)Midi_Bytes[1] - 36];
+				}
+				else{
+					// Choose ARR from LOWER notes - MIDI_LOWER_NOTE_SECTION
+					TIM6->ARR = LOWER_NOTES_ARR[(uint8_t)Midi_Bytes[1] - 36];
+				}
+				DMA_Cmd(DMA1_Stream5, ENABLE);;
+
+			}
 		}
+
+		if(MIDI_NOTE_ON == 0){
+			/* NOTE OFF: Key is been released */
+			DMA_Cmd(DMA1_Stream5, DISABLE);
+		}
+		MIDI_BYTEx++;
+
 	}
-	MIDI_BYTEx++;
 }
 
 int main(void)
@@ -122,22 +144,27 @@ int main(void)
 	SystemInit();
 
 	/* SysTick end of count event each 10ms */
-	RCC_GetClocksFreq(&RCC_Clocks);
-	SysTick_Config(RCC_Clocks.HCLK_Frequency / 100);
 
 	RCC_Configuration();
 
-	GPIO_Configuration();
-
-	USARTx_Configuration();
-
+	/* NVIC configuration */
 	NVIC_Configuration();
 
-	/* Initialize LEDs */
-	STM_EVAL_LEDInit(LED3);
+	/* Configure the GPIO ports */
+	GPIO_Configuration();
 
-	/* Turn on LEDs */
-	STM_EVAL_LEDOn(LED3);
+	/* Configure the USART6 MIDI receiver */
+	USARTx_Configuration();
+
+	/* Timer Configuration */
+	TIM_Configuration(169);
+
+	/* DAC Configuration */
+	DAC_Configuration();
+
+	/* DMA Config --> Takes in a pointer to the waveform buffer */
+	DMA_Configuration(SAWTOOTH_Wave);
+
 
 	/* Infinite loop */
 	while (1)
@@ -168,71 +195,80 @@ int main(void)
 void RCC_Configuration(void){
 	/* Initialize all the peripherals here. */
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART6 | RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA | RCC_AHB1Periph_GPIOB, ENABLE);
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC  | RCC_AHB1Periph_GPIOD, ENABLE);
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_DAC | RCC_APB1Periph_TIM2 | RCC_APB1Periph_I2C1 | RCC_APB1Periph_SPI3 , ENABLE);
-
-	/* Use PLL module enable I2S peripherals clock for accurate standard audio sampling */
-	RCC_PLLI2SCmd(ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA1 | RCC_APB1Periph_DAC  | RCC_AHB1Periph_GPIOC | RCC_AHB1Periph_GPIOA, ENABLE);
+	RCC_APB1PeriphClockCmd( RCC_APB1Periph_DAC | RCC_APB1Periph_TIM6 , ENABLE);
 }
-/* *
- *  @brief Initialize the timer.
- *  @args interval : 84000 = 1ms
- **/
 
-void TIM_Configuration(uint16_t period, uint16_t prescaler) {
-	TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStruct;
-
-	/* Put your timer initialisation here */
-
-	/* Configure the timer*/
-	TIM_TimeBaseInitStruct.TIM_Period = period - 1;
-	TIM_TimeBaseInitStruct.TIM_Prescaler = prescaler - 1;
-	TIM_TimeBaseInitStruct.TIM_ClockDivision = 0;
-	TIM_TimeBaseInitStruct.TIM_RepetitionCounter = TIM_CounterMode_Up;
-
-	/* Initialize timer 3*/
-	TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStruct);
-
-	/* Start the count */
-	TIM_Cmd(TIM2, ENABLE);
-
-	NVIC_EnableIRQ(TIM2_IRQn); // Enable IRQ for TIM5 in NVIC
-
-	/* Enable timer interrupt */
-	TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
-}
 /**
- * Initialize DAC for both chnnels
- */
-void DAC_Configuration(void){
-	DAC_InitTypeDef DAC_InitStructure;
+  * @brief  Configures the Timers.
+  * @param  wavePeriod (period of timer), preScaler (prescaler for timer)
+  * @retval : None
+  */
+void TIM_Configuration(uint16_t wavPeriod)
+{
+	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStruct;
 
-	DAC_InitStructure.DAC_Trigger = DAC_Trigger_None;
-	DAC_InitStructure.DAC_WaveGeneration = DAC_WaveGeneration_None;
-	DAC_InitStructure.DAC_OutputBuffer = DAC_OutputBuffer_Enable;
-	DAC_Init(DAC_Channel_1, &DAC_InitStructure);
-	DAC_Init(DAC_Channel_2, &DAC_InitStructure);
+	/* pack Timer struct */
+	TIM_TimeBaseStruct.TIM_Period = wavPeriod-1;
+	TIM_TimeBaseStruct.TIM_Prescaler = TIMER6_PRESCALER -1;
+	TIM_TimeBaseStruct.TIM_ClockDivision = TIM_CKD_DIV1;
+	TIM_TimeBaseStruct.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseStruct.TIM_RepetitionCounter = 0x0000;
 
+	/* Call init function */
+	TIM_TimeBaseInit(TIM6, &TIM_TimeBaseStruct);
+
+	/* Select Timer to trigger DAC */
+	TIM_SelectOutputTrigger(TIM6, TIM_TRGOSource_Update);
+
+	/* TIM6 enable counter */
+	TIM_Cmd(TIM6, ENABLE);
+
+}
+
+/**
+  * @brief  Configures the DAC
+  * @param  None
+  * @retval : None
+  */
+void DAC_Configuration(void)
+{
+	DAC_InitTypeDef DAC_InitStruct;
+
+	/* Initialize the DAC_Trigger member */
+	DAC_InitStruct.DAC_Trigger = DAC_Trigger_T6_TRGO;
+	DAC_InitStruct.DAC_WaveGeneration = DAC_WaveGeneration_None;
+	DAC_InitStruct.DAC_LFSRUnmask_TriangleAmplitude = DAC_LFSRUnmask_Bit0;
+	DAC_InitStruct.DAC_OutputBuffer = DAC_OutputBuffer_Enable;
+
+	/* Init DAC */
+	DAC_Init(DAC_Channel_1, &DAC_InitStruct);
+
+	/* Enable DMA request */
+	DAC_DMACmd(DAC_Channel_1, ENABLE);
+
+	/* Enable DAC Channel1: Once the DAC channel1 is enabled, PA.04 is automatically connected to the DAC converter. */
 	DAC_Cmd(DAC_Channel_1, ENABLE);
-	DAC_Cmd(DAC_Channel_2, ENABLE);
+
 }
 
 /**
  * Initialize GPIO for pins to be used
  */
-void GPIO_Configuration(void){
+void GPIO_Configuration(void)
+{
 	GPIO_InitTypeDef GPIO_InitStructure;
 
-	//  PA4 and PA5 for DAC.
-	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AN;
-	GPIO_InitStructure.GPIO_OType 	= GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Pin 	= GPIO_Pin_5 | GPIO_Pin_4;
-	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_NOPULL;
+	/* Pack the struct */
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_4;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
 
+	/* Call Init function */
 	GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-	/* Configure USART6 Tx and Rx as alternate function push-pull for MIDI Receiver */
+	/* Configure USART6 Tx and Rx as alternate function push-pull for MIDI Receiver*/
 	GPIO_InitStructure.GPIO_Mode 	= GPIO_Mode_AF;
 	GPIO_InitStructure.GPIO_Speed 	= GPIO_Speed_100MHz;
 	GPIO_InitStructure.GPIO_PuPd 	= GPIO_PuPd_UP;
@@ -240,47 +276,9 @@ void GPIO_Configuration(void){
 
 	GPIO_Init(GPIOC, &GPIO_InitStructure);
 
-	/* Alternate function PC 6-7 to USART_6 */
+	// Alternate function PC 6-7 to USART_6
 	GPIO_PinAFConfig(GPIOC, USARTx_TX_SOURCE, USARTx_TX_AF);
 	GPIO_PinAFConfig(GPIOC, USARTx_RX_SOURCE, USARTx_RX_AF);
-
-	/* Configure CODEC_RESET_PIN */
-	GPIO_InitStructure.GPIO_Pin = CODEC_RESET_PIN;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_DOWN;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-
-	GPIO_Init(GPIOD, &GPIO_InitStructure);
-
-	/* Configure I2C Pins */
-	GPIO_InitStructure.GPIO_Pin = I2C_SDA_PIN | I2C_SCL_PIN;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
-	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_OD;
-
-	GPIO_Init(GPIOB, &GPIO_InitStructure);
-
-	/* Alternate function PC 6-7 to I2C */
-	GPIO_PinAFConfig(GPIOB, GPIO_PinSource6, GPIO_AF_I2C1);
-	GPIO_PinAFConfig(GPIOB, GPIO_PinSource9, GPIO_AF_I2C1);
-
-	/* Configure I2S pins */
-	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_Pin = I2S3_SCLK_PIN | I2S3_SD_PIN | I2S3_MCLK_PIN;
-	GPIO_Init(GPIOC, &GPIO_InitStructure);
-
-	GPIO_InitStructure.GPIO_Pin = I2S3_WS_PIN;
-	GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-	/* Configure output ports to AF */
-	GPIO_PinAFConfig(GPIOA, GPIO_PinSource4, GPIO_AF_SPI3);
-	GPIO_PinAFConfig(GPIOC, GPIO_PinSource7, GPIO_AF_SPI3);
-	GPIO_PinAFConfig(GPIOC, GPIO_PinSource10, GPIO_AF_SPI3);
-	GPIO_PinAFConfig(GPIOC, GPIO_PinSource12, GPIO_AF_SPI3);
-
-	/*  Reset the CODEC so that I2S and I2c can be configured. */
-	GPIO_ResetBits(GPIOD, CODEC_RESET_PIN);
 
 }
 
@@ -324,7 +322,8 @@ void ADC_Configuration(void){
  * @Brief NVIC Configuration
  */
 
-void NVIC_Configuration(void){
+void NVIC_Configuration(void)
+{
 	NVIC_InitTypeDef NVIC_InitStructure;
 
 	/* Configure the Priority Group to 2 bits */
@@ -369,7 +368,7 @@ void USARTx_Configuration(void) {
 	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
 	USART_InitStructure.USART_StopBits = USART_StopBits_1;
 	USART_InitStructure.USART_Parity = USART_Parity_No;
-	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+	USART_InitStructure.USART_Mode = USART_Mode_Rx;
 
 	USART_Init(USART6, &USART_InitStructure);
 
@@ -380,307 +379,40 @@ void USARTx_Configuration(void) {
 	USART_ITConfig(USART6, USART_IT_RXNE, ENABLE);
 }
 
-/* *
- *  @brief Initialize peripherals used by the CODEC.
- *  @args none
- **/
-void CODEC_Configuration(void){
-	I2S_InitTypeDef I2S_InitStructure;
-	I2C_InitTypeDef I2C_InitStructure;
-
-	// configure I2S port
-	SPI_I2S_DeInit(CODEC_I2S);
-	I2S_InitStructure.I2S_AudioFreq = I2S_AudioFreq_48k;
-	I2S_InitStructure.I2S_MCLKOutput = I2S_MCLKOutput_Enable;
-	I2S_InitStructure.I2S_DataFormat = I2S_DataFormat_16b;
-	I2S_InitStructure.I2S_Mode = I2S_Mode_MasterTx;
-	I2S_InitStructure.I2S_Standard = I2S_Standard_Phillips;
-	I2S_InitStructure.I2S_CPOL = I2S_CPOL_Low;
-
-	I2S_Init(CODEC_I2S, &I2S_InitStructure);
-
-	// configure I2C port
-	I2C_DeInit(CODEC_I2C);
-	I2C_InitStructure.I2C_ClockSpeed = 100000;
-	I2C_InitStructure.I2C_Mode = I2C_Mode_I2C;
-	I2C_InitStructure.I2C_OwnAddress1 = CORE_I2C_ADDRESS;
-	I2C_InitStructure.I2C_Ack = I2C_Ack_Enable;
-	I2C_InitStructure.I2C_AcknowledgedAddress = I2C_AcknowledgedAddress_7bit;
-	I2C_InitStructure.I2C_DutyCycle = I2C_DutyCycle_2;
-
-	I2C_Cmd(CODEC_I2C, ENABLE);
-	I2C_Init(CODEC_I2C, &I2C_InitStructure);
-}
-
 /**
-  * @brief  Configure the volune
-  * @param  vol: volume value (0-100)
-  * @retval None
-  */
-uint8_t CODEC_Volume_CTRL(uint8_t vol){
-  EVAL_AUDIO_VolumeCtl(vol);
-  return 0;
-}
-
-/**
-* @brief  configure the mems accelometer to  Control Volume operation
-* @param  None
-* @retval None
-*/
-static void MEMS_Configuration(void)
-{
-  uint8_t ctrl = 0;
-
-  LIS302DL_InitTypeDef  LIS302DL_InitStruct;
-  LIS302DL_InterruptConfigTypeDef LIS302DL_InterruptStruct;
-
-  /* Set configuration of LIS302DL*/
-  LIS302DL_InitStruct.Power_Mode = LIS302DL_LOWPOWERMODE_ACTIVE;
-  LIS302DL_InitStruct.Output_DataRate = LIS302DL_DATARATE_100;
-  LIS302DL_InitStruct.Axes_Enable = LIS302DL_X_ENABLE | LIS302DL_Y_ENABLE | LIS302DL_Z_ENABLE;
-  LIS302DL_InitStruct.Full_Scale = LIS302DL_FULLSCALE_2_3;
-  LIS302DL_InitStruct.Self_Test = LIS302DL_SELFTEST_NORMAL;
-  LIS302DL_Init(&LIS302DL_InitStruct);
-
-  /* Set configuration of Internal High Pass Filter of LIS302DL*/
-  LIS302DL_InterruptStruct.Latch_Request = LIS302DL_INTERRUPTREQUEST_LATCHED;
-  LIS302DL_InterruptStruct.SingleClick_Axes = LIS302DL_CLICKINTERRUPT_Z_ENABLE;
-  LIS302DL_InterruptStruct.DoubleClick_Axes = LIS302DL_DOUBLECLICKINTERRUPT_Z_ENABLE;
-  LIS302DL_InterruptConfig(&LIS302DL_InterruptStruct);
-
-  /* Configure Interrupt control register: enable Click interrupt on INT1 and
-     INT2 on Z axis high event */
-  ctrl = 0x3F;
-  LIS302DL_Write(&ctrl, LIS302DL_CTRL_REG3_ADDR, 1);
-
-  /* Enable Interrupt generation on click on Z axis */
-  ctrl = 0x50;
-  LIS302DL_Write(&ctrl, LIS302DL_CLICK_CFG_REG_ADDR, 1);
-
-  /* Configure Click Threshold on X/Y axis (10 x 0.5g) */
-  ctrl = 0xAA;
-  LIS302DL_Write(&ctrl, LIS302DL_CLICK_THSY_X_REG_ADDR, 1);
-
-  /* Configure Click Threshold on Z axis (10 x 0.5g) */
-  ctrl = 0x0A;
-  LIS302DL_Write(&ctrl, LIS302DL_CLICK_THSZ_REG_ADDR, 1);
-
-  /* Enable interrupt on Y axis high event */
-  ctrl = 0x4C;
-  LIS302DL_Write(&ctrl, LIS302DL_FF_WU_CFG1_REG_ADDR, 1);
-
-  /* Configure Time Limit */
-  ctrl = 0x03;
-  LIS302DL_Write(&ctrl, LIS302DL_CLICK_TIMELIMIT_REG_ADDR, 1);
-
-  /* Configure Latency */
-  ctrl = 0x7F;
-  LIS302DL_Write(&ctrl, LIS302DL_CLICK_LATENCY_REG_ADDR, 1);
-
-  /* Configure Click Window */
-  ctrl = 0x7F;
-  LIS302DL_Write(&ctrl, LIS302DL_CLICK_WINDOW_REG_ADDR, 1);
-
-}
-
-/**
-  * @brief  Configures EXTI Line0 (connected to PA0 pin) in interrupt mode
+  * @brief  Configures the DMA.
   * @param  None
-  * @retval None
+  * @retval : None
   */
-static void EXTILine_Configuration(void)
+void DMA_Configuration( uint16_t* wavBuffer )
 {
-  GPIO_InitTypeDef   GPIO_InitStructure;
-  NVIC_InitTypeDef   NVIC_InitStructure;
-  EXTI_InitTypeDef   EXTI_InitStructure;
-  /* Enable GPIOA clock */
-  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
-  /* Enable SYSCFG clock */
-  RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
-  /* Configure PE0 and PE1 pins as input floating */
-  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
-  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0|GPIO_Pin_1;
-  GPIO_Init(GPIOE, &GPIO_InitStructure);
+	DMA_InitTypeDef DMA_InitStructure;
 
-  /* Connect EXTI Line to PE1 pins */
-  SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOE, EXTI_PinSource1);
+	//Initialize the structure to default values
+	DMA_StructInit(&DMA_InitStructure);
 
-  /* Configure EXTI Line1 */
-  EXTI_InitStructure.EXTI_Line = EXTI_Line1;
-  EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-  EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
-  EXTI_InitStructure.EXTI_LineCmd = ENABLE;
-  EXTI_Init(&EXTI_InitStructure);
+	DMA_InitStructure.DMA_Channel = DMA_Channel_7;
+	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)(DAC_BASE + 0x08);  //DAC channel1 12-bit right-aligned data holding register (ref manual pg. 264)
+	DMA_InitStructure.DMA_Memory0BaseAddr = (uint32_t)wavBuffer;
+	DMA_InitStructure.DMA_DIR = DMA_DIR_MemoryToPeripheral;
+	DMA_InitStructure.DMA_BufferSize = BUFFER_SIZE;
+	DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+	DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
+	DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord;
+	DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;
+	DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
+	DMA_InitStructure.DMA_Priority = DMA_Priority_High;
+	DMA_InitStructure.DMA_FIFOMode = DMA_FIFOMode_Disable;
+	DMA_InitStructure.DMA_FIFOThreshold = DMA_FIFOThreshold_Full;
+	DMA_InitStructure.DMA_MemoryBurst = DMA_MemoryBurst_Single;
+	DMA_InitStructure.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
 
-  NVIC_PriorityGroupConfig(NVIC_PriorityGroup_3);
+	/* Call Init function */
+	DMA_Init(DMA1_Stream5, &DMA_InitStructure);
 
-  /* Enable and set EXTI Line0 Interrupt to the lowest priority */
-  NVIC_InitStructure.NVIC_IRQChannel = EXTI1_IRQn;
-  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
-  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
-  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-  NVIC_Init(&NVIC_InitStructure);
-}
-void CS43L22_Configuration(void)
-{
-	uint32_t delaycount;
-	uint8_t cmdBuffer[5];
+	/* DMA Will be ENABLED when the key is pressed. Ensure that DMA is disabled on startup. */
+	DMA_Cmd(DMA1_Stream5, DISABLE);
 
-	uint8_t regValue = 0xFF;
-
-	GPIO_SetBits(GPIOD, CODEC_RESET_PIN);
-	delaycount = 1000000;
-	while (delaycount > 0)
-	{
-		delaycount--;
-	}
-	//keep codec OFF
-	cmdBuffer[0] = CODEC_MAP_PLAYBACK_CTRL1;
-	cmdBuffer[1] = 0x01;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	//begin initialization sequence (p. 32)
-	cmdBuffer[0] = 0x00;
-	cmdBuffer[1] = 0x99;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = 0x47;
-	cmdBuffer[1] = 0x80;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	regValue = Read_CODEC_Register(0x32);
-
-	cmdBuffer[0] = 0x32;
-	cmdBuffer[1] = regValue | 0x80;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	regValue = Read_CODEC_Register(0x32);
-
-	cmdBuffer[0] = 0x32;
-	cmdBuffer[1] = regValue & (~0x80);
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = 0x00;
-	cmdBuffer[1] = 0x00;
-	Send_CODEC_Command(cmdBuffer, 2);
-	//end of initialization sequence
-
-	cmdBuffer[0] = CODEC_MAP_PWR_CTRL2;
-	cmdBuffer[1] = 0xAF;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = CODEC_MAP_PLAYBACK_CTRL1;
-	cmdBuffer[1] = 0x70;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = CODEC_MAP_CLK_CTRL;
-	cmdBuffer[1] = 0x81; //auto detect clock
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = CODEC_MAP_IF_CTRL1;
-	cmdBuffer[1] = 0x07;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = 0x0A;
-	cmdBuffer[1] = 0x00;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = 0x27;
-	cmdBuffer[1] = 0x00;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = 0x1A | CODEC_MAPBYTE_INC;
-	cmdBuffer[1] = 0x0A;
-	cmdBuffer[2] = 0x0A;
-	Send_CODEC_Command(cmdBuffer, 3);
-
-	cmdBuffer[0] = 0x1F;
-	cmdBuffer[1] = 0x0F;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	cmdBuffer[0] = CODEC_MAP_PWR_CTRL1;
-	cmdBuffer[1] = 0x9E;
-	Send_CODEC_Command(cmdBuffer, 2);
-
-	/* Enable SPI  */
-	I2S_Cmd(CODEC_I2S, ENABLE);
-}
-
-/**
- * @Brief Send commands to CS43L22
- */
-void Send_CODEC_Command(uint8_t controlBytes[], uint8_t numBytes)
-{
-	uint8_t bytesSent=0;
-
-	//just wait until no longer busy
-	while (I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BUSY)){}
-
-	I2C_GenerateSTART(CODEC_I2C, ENABLE);
-	//wait for generation of start condition
-	while (!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_SB)){}
-
-	I2C_Send7bitAddress(CODEC_I2C, CODEC_I2C_ADDRESS, I2C_Direction_Transmitter);
-	//wait for end of address transmission
-	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)){}
-
-	while (bytesSent < numBytes)
-	{
-		I2C_SendData(CODEC_I2C, controlBytes[bytesSent]);
-		bytesSent++;
-		//wait for transmission of byte
-		while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_BYTE_TRANSMITTING)){}
-	}
-	//wait until it's finished sending before creating STOP
-	while(!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BTF)){}
-	I2C_GenerateSTOP(CODEC_I2C, ENABLE);
-
-}
-
-/**
- * @Brief Read CS43L22 Register
- */
-uint8_t Read_CODEC_Register(uint8_t mapbyte)
-{
-	uint8_t receivedByte = 0;
-
-	//just wait until no longer busy
-	while (I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BUSY)){}
-
-	I2C_GenerateSTART(CODEC_I2C, ENABLE);
-	//wait for generation of start condition
-	while (!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_SB)){}
-
-	I2C_Send7bitAddress(CODEC_I2C, CODEC_I2C_ADDRESS, I2C_Direction_Transmitter);
-	//wait for end of address transmission
-	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)){}
-
-	I2C_SendData(CODEC_I2C, mapbyte); //sets the transmitter address
-	//wait for transmission of byte
-	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_BYTE_TRANSMITTING)){}
-	I2C_GenerateSTOP(CODEC_I2C, ENABLE);
-
-	//just wait until no longer busy
-	while (I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_BUSY)){}
-
-	I2C_AcknowledgeConfig(CODEC_I2C, DISABLE);
-
-	I2C_GenerateSTART(CODEC_I2C, ENABLE);
-	//wait for generation of start condition
-	while (!I2C_GetFlagStatus(CODEC_I2C, I2C_FLAG_SB)){}
-
-	I2C_Send7bitAddress(CODEC_I2C, CODEC_I2C_ADDRESS, I2C_Direction_Receiver);
-	//wait for end of address transmission
-	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED)){}
-
-	//wait until byte arrived
-	while (!I2C_CheckEvent(CODEC_I2C, I2C_EVENT_MASTER_BYTE_RECEIVED)){}
-	receivedByte = I2C_ReceiveData(CODEC_I2C);
-
-	I2C_GenerateSTOP(CODEC_I2C, ENABLE);
-
-	return receivedByte;
 }
 /**
   * @brief  MEMS accelerometre management of the timeout situation.
